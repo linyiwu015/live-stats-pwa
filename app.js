@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '1.5.3';
+const APP_VERSION = '1.5.4';
 const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const STORAGE = {
   state: 'liveStats.state.v1',
@@ -433,6 +433,12 @@ function canManageUsers() {
 function allowedRooms(user = resolveUser()) {
   if (!user) return [];
   if (user.role === 'admin') return app.data.rooms;
+  return app.data.rooms.filter((room) => (user.roomIds || []).map(Number).includes(Number(room.id)));
+}
+
+function viewableRooms(user = resolveUser()) {
+  if (!user) return [];
+  if (user.role === 'admin' || user.viewAll) return app.data.rooms;
   return app.data.rooms.filter((room) => (user.roomIds || []).map(Number).includes(Number(room.id)));
 }
 
@@ -928,7 +934,7 @@ function renderRoomTrends() {
   for (let day = 1; day <= days; day++) {
     buckets.push({ key: app.month + '-' + String(day).padStart(2, '0'), label: day + '日', day });
   }
-  const roomCharts = app.data.rooms.map((room) => {
+  const roomCharts = viewableRooms().map((room) => {
     const rs = monthRecords.filter((r) => Number(r.roomId) === Number(room.id));
     const values = buckets.map((b) => {
       const list = rs.filter((r) => String(r.date || '').startsWith(b.key));
@@ -959,13 +965,18 @@ function renderRoomTrends() {
 }
 
 function renderUserRoomStats(records) {
-  const users = activeUsers().filter((u) => records.some((r) => r.hostId === u.id));
+  const viewer = resolveUser();
+  if (!viewer) return '';
+  const allUsers = activeUsers();
+  const users = (viewer.role === 'admin' || viewer.viewAll)
+    ? allUsers
+    : allUsers.filter((u) => u.id === viewer.id);
   if (!users.length) return '';
   const rows = users.map((u) => {
     const ur = records.filter((r) => r.hostId === u.id);
     const totalCount = ur.length;
     const totalAvg = totalCount ? ur.reduce((sum, r) => sum + (Number(r.peak) || 0), 0) / totalCount : 0;
-    const roomCells = app.data.rooms.map((room) => {
+    const roomCells = viewableRooms().map((room) => {
       const rs = ur.filter((r) => Number(r.roomId) === Number(room.id));
       const count = rs.length;
       const avgPeak = count ? rs.reduce((sum, r) => sum + (Number(r.peak) || 0), 0) / count : 0;
