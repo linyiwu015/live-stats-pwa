@@ -1054,6 +1054,12 @@ function renderProfile() {
       '<div class="stat-row"><span class="stat-row-label">团队名称</span><span class="stat-row-value">' + escapeHtml(app.data.meta.teamName) + '</span></div>' +
       '<div class="stat-row"><span class="stat-row-label">数据版本</span><span class="stat-row-value">v' + Number(app.data.meta.revision || 1) + '</span></div>' +
     '</div>' +
+    '<div class="section-head"><div class="section-title">版本更新</div></div>' +
+    '<div class="card card-tight">' +
+      '<div class="stat-row"><span class="stat-row-label">当前版本</span><span class="stat-row-value text-success">v' + APP_VERSION + '</span></div>' +
+      '<button class="btn btn-primary btn-block" data-action="check-update">检查版本更新</button>' +
+      '<p class="form-hint" style="text-align:center;margin-top:8px">点击后自动同步数据并刷新到最新版本</p>' +
+    '</div>' +
     '<div class="section-head"><div class="section-title">账号安全</div></div>' +
     '<div class="card card-tight"><button class="btn btn-ghost btn-block" data-action="change-password">修改登录密码</button></div>' +
     '<div class="section-head"><div class="section-title">数据管理</div></div>' +
@@ -1883,6 +1889,7 @@ document.addEventListener('click', async (event) => {
       render();
       return;
     }
+    if (action === 'check-update') { checkAppUpdateAndReload(); return; }
     if (action === 'sync-now') {
       if (app.mqttClient?.connected) {
         if (app.dirty) await publishState(); else toast('当前数据已是最新', 'success');
