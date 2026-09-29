@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '1.5.6';
+const APP_VERSION = '1.5.7';
 const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const STORAGE = {
   state: 'liveStats.state.v1',
