@@ -186,3 +186,7 @@ textarea.input{height:auto;padding:14px 15px;resize:vertical;min-height:88px}
 .mini-bar-fill{width:100%;border-radius:8px;background:linear-gradient(180deg,#2b8a3e,#1f7a33);min-height:2px}
 .mini-bar-label{font-size:9px;color:var(--muted);white-space:nowrap;height:12px;line-height:12px}
 .mini-bar-count{font-size:8px;color:var(--muted);white-space:nowrap;height:10px;line-height:10px}
+.chart-inner-mini{height:auto;padding:0}
+.mini-bar-col.is-today .mini-bar-fill{background:linear-gradient(180deg,#2f9e68,#1f7a33)}
+.mini-bar-col.is-today .mini-bar-label{color:var(--primary);font-weight:700}
+.mini-bar-col.is-today .mini-bar-value{color:var(--primary)}
