@@ -1,4 +1,4 @@
-const VERSION = 'live-stats-v1.5.4';
+const VERSION = 'live-stats-v1.5.5';
 const ASSETS = [
   './',
   './index.html',
@@ -10,7 +10,8 @@ const ASSETS = [
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  './icons/maskable-512.png'
+  './icons/maskable-512.png',
+  './icons/brand-logo.png'
 ];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(VERSION).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
