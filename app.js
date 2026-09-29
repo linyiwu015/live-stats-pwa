@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.5.1';
 const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const STORAGE = {
   state: 'liveStats.state.v1',
@@ -921,9 +921,13 @@ function renderRoomTrends(records) {
     const maxV = Math.max(1, ...values.map((v) => v.avg));
     const bars = values.map((v) => {
       const height = v.avg > 0 ? Math.max(4, (v.avg / maxV) * 72) : 2;
-      return '<div class="mini-bar-col">' +
+      const valueText = v.avg ? String(Math.round(v.avg)) : '';
+      const countText = v.count ? v.count + '次' : '';
+      return '<div class="mini-bar-col" title="' + escapeHtml(v.label) + '：平均 ' + (v.avg ? v.avg.toFixed(v.avg >= 100 ? 0 : 1) : '0') + ' 人 / ' + v.count + ' 次">' +
+        '<div class="mini-bar-value">' + valueText + '</div>' +
         '<div class="mini-bar-track"><div class="mini-bar-fill" style="height:' + height + 'px"></div></div>' +
         '<div class="mini-bar-label">' + escapeHtml(v.label) + '</div>' +
+        '<div class="mini-bar-count">' + countText + '</div>' +
       '</div>';
     }).join('');
     return '<div class="room-trend">' +
