@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const STORAGE = {
   state: 'liveStats.state.v1',
@@ -14,11 +14,20 @@ const DEFAULT_ROOMS = [
   { id: 3, name: '三号直播间', channel: '视频号' }
 ];
 const ADMIN_PHONE = '13957116161';
+const AVATARS = ['😀','😄','😊','🥰','😎','🤩','🥳','😇','🙂','🤗','💪','👍','🌟','🔥','🎤','📺','🏆','📈'];
+const TIME_RANGES = [
+  { key: 'today', label: '今日' },
+  { key: 'yesterday', label: '昨日' },
+  { key: 'month', label: '本月' },
+  { key: 'year', label: '今年' }
+];
+const DEFAULT_VIOLATION_REASONS = ['低俗内容','违规广告','虚假宣传','诱导分享','其他'];
 const DEFAULT_FIELDS = [
   { id: 'fld_date', key: 'date', name: '日期', type: 'date', required: true, fixed: true, options: [] },
   { id: 'fld_start', key: 'start', name: '开播时间', type: 'time', required: true, fixed: true, options: [] },
   { id: 'fld_duration', key: 'duration', name: '直播时长', type: 'duration', required: true, fixed: true, options: [] },
   { id: 'fld_peak', key: 'peak', name: '在线高峰人数', type: 'number', required: true, fixed: true, options: [] },
+  { id: 'fld_violation', key: 'violation', name: '有无违规', type: 'violation', required: false, fixed: true, options: [] },
   { id: 'fld_note', key: 'note', name: '备注', type: 'text', required: false, fixed: true, options: [] }
 ];
 const METRICS = {
@@ -31,7 +40,9 @@ const app = {
   data: null,
   session: null,
   teamCode: null,
-  tab: 'dashboard',
+  tab: 'home',
+  range: 'month',
+  year: new Date().getFullYear(),
   metric: 'peak',
   month: monthKey(new Date()),
   recordRoom: 'all',
@@ -49,7 +60,9 @@ const app = {
   stateKey: null,
   lastRenderKey: '',
   fieldDraft: null,
-  editingFieldId: ''
+  editingFieldId: '',
+  editingRoomId: '',
+  profileAvatar: ''
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -264,6 +277,7 @@ function createInitialState(teamName, admin) {
     },
     rooms: jsonClone(DEFAULT_ROOMS),
     fields: jsonClone(DEFAULT_FIELDS),
+    violationReasons: jsonClone(DEFAULT_VIOLATION_REASONS),
     users: [admin],
     records: []
   };
@@ -280,6 +294,7 @@ function normalizeState(value) {
   data.meta.createdAt = data.meta.createdAt || now;
   data.meta.updatedAt = data.meta.updatedAt || now;
   data.fields = normalizeFields(data.fields);
+  data.violationReasons = Array.isArray(data.violationReasons) && data.violationReasons.length ? data.violationReasons.map(String).filter(Boolean) : jsonClone(DEFAULT_VIOLATION_REASONS);
   data.rooms = Array.isArray(data.rooms) && data.rooms.length ? data.rooms : jsonClone(DEFAULT_ROOMS);
   data.users = Array.isArray(data.users) ? data.users : [];
   data.records = Array.isArray(data.records) ? data.records : [];
@@ -334,7 +349,7 @@ function normalizeFields(list) {
       id: String(field.id),
       key,
       name: visibleText(field.name, '未命名统计项'),
-      type: ['date', 'time', 'duration', 'number', 'text', 'select'].includes(field.type) ? field.type : 'text',
+      type: ['date', 'time', 'duration', 'number', 'text', 'select', 'violation'].includes(field.type) ? field.type : 'text',
       required: Boolean(field.required),
       fixed: Boolean(field.fixed),
       options: Array.isArray(field.options) ? field.options.map(String).filter(Boolean) : []
@@ -372,6 +387,14 @@ function userName(id) {
 
 function userInitial(name) {
   return visibleText(name, '主').slice(-1);
+}
+
+function avatarText(user) {
+  return (user && user.avatar) ? user.avatar : userInitial(user && user.name);
+}
+
+function avatarHtml(user, cls) {
+  return '<span class="' + (cls || 'avatar') + '">' + escapeHtml(avatarText(user)) + '</span>';
 }
 
 function canManageUsers() {
@@ -662,6 +685,7 @@ function render() {
 }
 
 function afterRender() {
+  bindWheels();
   if (app.tab === 'dashboard') {
     requestAnimationFrame(() => {
       const chart = $('#trend-chart');
@@ -742,8 +766,8 @@ function renderLogin() {
 }
 
 function mainTitle() {
-  if (app.tab === 'dashboard') return ['数据概览', app.data.meta.teamName];
-  if (app.tab === 'records') return ['直播记录', '每日数据录入与修改'];
+  if (app.tab === 'home') return ['打卡', '每日直播数据填写'];
+  if (app.tab === 'stats') return ['统计', '记录与数据分析'];
   if (app.tab === 'staff') return ['人员与权限', '管理员功能'];
   return ['我的', '账号与数据安全'];
 }
@@ -751,110 +775,173 @@ function mainTitle() {
 function renderMain() {
   const [title, subtitle] = mainTitle();
   const user = resolveUser();
-  const showFab = (app.tab === 'dashboard' || app.tab === 'records') && (user.role === 'admin' || allowedRooms(user).length > 0);
   return '<div class="app-shell">' +
     '<header class="topbar">' +
-      '<button class="avatar-button" data-action="tab" data-tab="profile">' + escapeHtml(userInitial(user.name)) + '</button>' +
+      '<button class="avatar-button" data-action="tab" data-tab="profile">' + escapeHtml(avatarText(user)) + '</button>' +
       '<div style="flex:1;min-width:0"><div class="topbar-title">' + escapeHtml(title) + '</div><div class="topbar-subtitle">' + escapeHtml(subtitle) + '</div></div>' +
-      (app.tab === 'dashboard' ? '<button class="icon-btn" data-action="sync-now" title="立即同步">↻</button>' : '') +
+      '<button class="icon-btn" data-action="sync-now" title="立即同步">↻</button>' +
     '</header>' +
     '<main class="page">' + renderTab() + '</main>' +
-    (showFab ? '<button class="fab" data-action="add-record" title="新增记录"><span>＋</span></button>' : '') +
     renderBottomNav() +
   '</div>';
 }
 
 function renderTab() {
-  if (app.tab === 'records') return renderRecords();
+  if (app.tab === 'home') return renderHome();
+  if (app.tab === 'stats') return renderStats();
   if (app.tab === 'staff' && canManageUsers()) return renderStaff();
   if (app.tab === 'profile') return renderProfile();
-  return renderDashboard();
+  return renderHome();
 }
 
 function renderBottomNav() {
   const user = resolveUser();
   return '<nav class="bottom-nav">' +
-    '<button class="nav-item ' + (app.tab === 'dashboard' ? 'active' : '') + '" data-action="tab" data-tab="dashboard"><i class="nav-icon">▦</i><span>概览</span></button>' +
-    '<button class="nav-item ' + (app.tab === 'records' ? 'active' : '') + '" data-action="tab" data-tab="records"><i class="nav-icon">▤</i><span>记录</span></button>' +
+    '<button class="nav-item ' + (app.tab === 'home' ? 'active' : '') + '" data-action="tab" data-tab="home"><i class="nav-icon">✎</i><span>打卡</span></button>' +
+    '<button class="nav-item ' + (app.tab === 'stats' ? 'active' : '') + '" data-action="tab" data-tab="stats"><i class="nav-icon">▦</i><span>统计</span></button>' +
     (user.role === 'admin' ? '<button class="nav-item ' + (app.tab === 'staff' ? 'active' : '') + '" data-action="tab" data-tab="staff"><i class="nav-icon">♙</i><span>人员</span></button>' : '') +
     '<button class="nav-item ' + (app.tab === 'profile' ? 'active' : '') + '" data-action="tab" data-tab="profile"><i class="nav-icon">◉</i><span>我的</span></button>' +
   '</nav>';
 }
 
-function renderDashboard() {
-  const records = recordsInMonth(app.month);
+function renderStats() {
+  const records = statsRecords(app.range);
   const summary = recordSummary(records);
-  const monthlyRows = monthlyHostStats(records);
-  const [year, month] = app.month.split('-').map(Number);
-  const monthText = year + '年' + month + '月';
   return '<section>' +
-    '<div class="month-bar">' +
-      '<div class="month-switch">' +
-        '<button class="month-arrow" data-action="month-prev">‹</button>' +
-        '<button class="month-current" data-action="month-picker">' + escapeHtml(monthText) + '</button>' +
-        '<button class="month-arrow" data-action="month-next">›</button>' +
-      '</div>' +
-      '<button class="btn btn-soft" style="min-height:44px;padding:0 15px;font-size:13px" data-action="add-record">＋ 新增</button>' +
+    renderStatsHeader() +
+    '<div class="kpi-grid" style="margin-top:14px">' +
+      kpiCard(fieldName('duration', '直播时长') + '合计', (summary.totalHours ? summary.totalHours.toFixed(summary.totalHours >= 10 ? 0 : 1) : '0'), '小时', '所选范围', '') +
+      kpiCard('平均' + fieldName('peak', '高峰人数'), summary.averagePeak.toFixed(summary.averagePeak >= 100 ? 0 : 1), '人', '每条直播', 'success') +
+      kpiCard('最高' + fieldName('peak', '高峰人数'), formatNumber(summary.maxPeak), '人', '峰值', 'warning') +
+      kpiCard('直播次数', formatNumber(summary.count), '次', records.length + ' 条记录', '') +
     '</div>' +
-    '<div class="hero">' +
-      '<div class="hero-row">' +
-        '<div><div class="hero-label">本月主持次数合计</div><div class="hero-value">' + formatNumber(summary.count) + '<span class="hero-unit">次</span></div><div class="hero-note">覆盖 ' + monthlyRows.length + ' 位主持人 · ' + records.length + ' 条可查看记录</div></div>' +
-        renderSyncBadge() +
-      '</div>' +
-    '</div>' +
-    '<div class="kpi-grid" style="margin-top:12px">' +
-      kpiCard(fieldName('duration', '直播时长') + '合计', (summary.totalHours ? summary.totalHours.toFixed(summary.totalHours >= 10 ? 0 : 1) : '0'), '小时', '本月累计', '') +
-      kpiCard('平均' + fieldName('peak', '高峰人数'), summary.averagePeak.toFixed(summary.averagePeak >= 100 ? 0 : 1), '人', '每条直播平均', 'success') +
-      kpiCard('最高' + fieldName('peak', '高峰人数'), formatNumber(summary.maxPeak), '人', '本月峰值', 'warning') +
-      kpiCard('主持人数', formatNumber(monthlyRows.length), '人', '有直播记录', '') +
-    '</div>' +
+    renderRoomChart(records) +
+    renderUserRoomStats(records) +
     renderTrendCard(records) +
-    '<div class="section-head"><div><div class="section-title">主持人月报</div><div class="section-desc">按主持次数排序</div></div></div>' +
-    renderMonthlyRanking(monthlyRows) +
+    renderRecordsList(records) +
   '</section>';
 }
 
-function kpiCard(label, value, unit, sub, tone) {
-  return '<div class="kpi ' + tone + '"><div class="kpi-label">' + escapeHtml(label) + '</div><div class="kpi-value">' + escapeHtml(value) + '<small>' + escapeHtml(unit) + '</small></div><div class="kpi-sub">' + escapeHtml(sub) + '</div></div>';
+function statsRecords(range) {
+  const now = new Date();
+  const today = localDate(now);
+  const yesterday = addDays(today, -1);
+  const recs = visibleRecords();
+  if (range === 'today') return recs.filter((r) => r.date === today);
+  if (range === 'yesterday') return recs.filter((r) => r.date === yesterday);
+  if (range === 'year') return recs.filter((r) => String(r.date || '').startsWith(String(app.year)));
+  return recs.filter((r) => String(r.date || '').startsWith(app.month));
+}
+
+function renderStatsHeader() {
+  const range = app.range;
+  let nav = '';
+  if (range === 'month') {
+    nav = '<div class="month-switch"><button class="month-arrow" data-action="month-prev">‹</button><button class="month-current" data-action="month-picker">' + escapeHtml(monthLabel(app.month)) + '</button><button class="month-arrow" data-action="month-next">›</button></div>';
+  } else if (range === 'year') {
+    nav = '<div class="month-switch"><button class="month-arrow" data-action="year-prev">‹</button><span class="month-current">' + app.year + '年</span><button class="month-arrow" data-action="year-next">›</button></div>';
+  } else {
+    nav = '<div class="muted" style="font-size:13px;font-weight:700">' + (range === 'today' ? '今日' : '昨日') + '</div>';
+  }
+  return '<div class="range-bar">' +
+    '<div class="segmented">' + TIME_RANGES.map((r) => '<button class="' + (range === r.key ? 'active' : '') + '" data-action="range" data-value="' + r.key + '">' + r.label + '</button>').join('') + '</div>' +
+    nav +
+  '</div>';
+}
+
+function renderRoomChart(records) {
+  const rooms = app.data.rooms;
+  const maxPeak = Math.max(1, ...rooms.map((room) => {
+    const rs = records.filter((r) => Number(r.roomId) === Number(room.id));
+    return rs.length ? Math.max(...rs.map((r) => Number(r.peak) || 0)) : 0;
+  }));
+  const bars = rooms.map((room) => {
+    const rs = records.filter((r) => Number(r.roomId) === Number(room.id));
+    const count = rs.length;
+    const avgPeak = count ? rs.reduce((sum, r) => sum + (Number(r.peak) || 0), 0) / count : 0;
+    const height = avgPeak > 0 ? Math.max(6, (avgPeak / maxPeak) * 130) : 4;
+    return '<div class="bar-col" title="' + escapeHtml(room.name) + '">' +
+      '<div class="bar-value">' + (avgPeak ? avgPeak.toFixed(avgPeak >= 100 ? 0 : 1) : '') + '</div>' +
+      '<div class="bar-track"><div class="bar-fill success" style="height:' + height + 'px"></div></div>' +
+      '<div class="bar-label">' + escapeHtml(room.name) + '</div>' +
+      '<div class="bar-sub">' + count + '次</div>' +
+    '</div>';
+  }).join('');
+  return '<div class="section-head"><div><div class="section-title">各直播间高峰人数</div><div class="section-desc">柱高=平均' + escapeHtml(fieldName('peak', '高峰人数')) + '，下方为直播次数</div></div></div>' +
+    '<div class="card chart-card">' + (records.length ? '<div class="chart-scroll"><div class="chart-inner">' + bars + '</div></div>' : '<div class="chart-empty">暂无数据</div>') + '</div>';
+}
+
+function renderUserRoomStats(records) {
+  const users = activeUsers().filter((u) => records.some((r) => r.hostId === u.id));
+  if (!users.length) return '';
+  const rows = users.map((u) => {
+    const ur = records.filter((r) => r.hostId === u.id);
+    const roomCells = app.data.rooms.map((room) => {
+      const rs = ur.filter((r) => Number(r.roomId) === Number(room.id));
+      const count = rs.length;
+      const avgPeak = count ? rs.reduce((sum, r) => sum + (Number(r.peak) || 0), 0) / count : 0;
+      return '<div class="user-room-cell"><div class="room-name">' + escapeHtml(room.name) + '</div><div class="room-count">' + count + ' 次</div><div class="room-avg">均峰 ' + (avgPeak ? avgPeak.toFixed(avgPeak >= 100 ? 0 : 1) : '0') + '</div></div>';
+    }).join('');
+    const totalCount = ur.length;
+    const totalAvg = totalCount ? ur.reduce((sum, r) => sum + (Number(r.peak) || 0), 0) / totalCount : 0;
+    return '<div class="user-room-card">' +
+      '<div class="user-room-head">' + avatarHtml(u, 'avatar-md') + '<div class="user-room-name">' + escapeHtml(u.name) + '</div><div class="user-room-total">' + totalCount + ' 次 · 均峰 ' + totalAvg.toFixed(totalAvg >= 100 ? 0 : 1) + '</div></div>' +
+      '<div class="user-room-grid">' + roomCells + '</div>' +
+    '</div>';
+  }).join('');
+  return '<div class="section-head"><div><div class="section-title">按主持人统计</div><div class="section-desc">各直播间直播次数与平均' + escapeHtml(fieldName('peak', '高峰人数')) + '</div></div></div>' +
+    '<div class="card">' + rows + '</div>';
 }
 
 function renderTrendCard(records) {
-  const days = daysInMonth(app.month);
-  const aggregates = [];
-  for (let day = 1; day <= days; day++) {
-    const date = app.month + '-' + String(day).padStart(2, '0');
-    const list = records.filter((record) => record.date === date);
-    const peakValues = list.map((record) => Number(record.peak) || 0);
-    aggregates.push({
-      date,
-      day,
-      count: list.length,
-      duration: list.reduce((sum, record) => sum + (Number(record.duration) || 0), 0) / 60,
-      peak: peakValues.length ? peakValues.reduce((sum, value) => sum + value, 0) / peakValues.length : 0,
-      maxPeak: peakValues.length ? Math.max(...peakValues) : 0
-    });
-  }
+  if (app.range === 'today' || app.range === 'yesterday') return '';
   const metric = app.metric;
-  const values = aggregates.map((item) => metric === 'peak' ? item.peak : metric === 'duration' ? item.duration : item.count);
+  const aggregates = [];
+  if (app.range === 'year') {
+    for (let m = 1; m <= 12; m++) {
+      const key = String(app.year) + '-' + String(m).padStart(2, '0');
+      const list = records.filter((r) => String(r.date || '').startsWith(key));
+      const peakValues = list.map((r) => Number(r.peak) || 0);
+      aggregates.push({ key, label: m + '月', count: list.length, duration: list.reduce((s, r) => s + (Number(r.duration) || 0), 0) / 60, peak: peakValues.length ? peakValues.reduce((s, v) => s + v, 0) / peakValues.length : 0 });
+    }
+  } else {
+    const days = daysInMonth(app.month);
+    for (let day = 1; day <= days; day++) {
+      const date = app.month + '-' + String(day).padStart(2, '0');
+      const list = records.filter((r) => r.date === date);
+      const peakValues = list.map((r) => Number(r.peak) || 0);
+      aggregates.push({ key: date, label: day + '日', count: list.length, duration: list.reduce((s, r) => s + (Number(r.duration) || 0), 0) / 60, peak: peakValues.length ? peakValues.reduce((s, v) => s + v, 0) / peakValues.length : 0 });
+    }
+  }
+  const values = aggregates.map((i) => metric === 'peak' ? i.peak : metric === 'duration' ? i.duration : i.count);
   const maxValue = Math.max(...values, 1);
-  const labelStep = days > 20 ? 5 : days > 12 ? 3 : 2;
-  const bars = aggregates.map((item) => {
-    const value = metric === 'peak' ? item.peak : metric === 'duration' ? item.duration : item.count;
+  const bars = aggregates.map((i) => {
+    const value = metric === 'peak' ? i.peak : metric === 'duration' ? i.duration : i.count;
     const height = value > 0 ? Math.max(5, (value / maxValue) * 132) : 4;
     const display = metric === 'duration' ? (value ? value.toFixed(value >= 10 ? 0 : 1) : '') : (value ? formatNumber(value, value % 1 ? 1 : 0) : '');
-    return '<div class="bar-col" title="' + item.date + '">' +
+    return '<div class="bar-col" title="' + escapeHtml(i.key) + '">' +
       '<div class="bar-value">' + escapeHtml(display) + '</div>' +
       '<div class="bar-track"><div class="bar-fill ' + (metric === 'peak' ? 'success' : metric === 'duration' ? 'warning' : '') + '" style="height:' + height + 'px"></div></div>' +
-      '<div class="bar-label">' + (item.day === 1 || item.day % labelStep === 0 || item.day === days ? item.day + '日' : '') + '</div>' +
+      '<div class="bar-label">' + escapeHtml(i.label) + '</div>' +
     '</div>';
   }).join('');
-  return '<div class="section-head"><div><div class="section-title">趋势分析</div><div class="section-desc">' + escapeHtml(monthLabel(app.month)) + '每日柱状趋势</div></div></div>' +
+  return '<div class="section-head"><div><div class="section-title">趋势分析</div><div class="section-desc">' + (app.range === 'year' ? app.year + '年按月' : monthLabel(app.month) + '按日') + '柱状趋势</div></div></div>' +
     '<div class="card chart-card">' +
       '<div class="chart-head"><div class="section-title" style="font-size:14px">' + metricLabel(metric) + '</div><div class="segmented">' +
         Object.keys(METRICS).map((key) => '<button class="' + (metric === key ? 'active' : '') + '" data-action="metric" data-metric="' + key + '">' + metricLabel(key) + '</button>').join('') +
       '</div></div>' +
-      (records.length ? '<div id="trend-chart" class="chart-scroll"><div class="chart-inner">' + bars + '</div></div>' : '<div class="chart-empty">本月还没有直播记录</div>') +
+      (records.length ? '<div class="chart-scroll"><div class="chart-inner">' + bars + '</div></div>' : '<div class="chart-empty">暂无数据</div>') +
     '</div>';
+}
+
+function renderRecordsList(records) {
+  const list = records.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)) || Number(b.startMinutes) - Number(a.startMinutes));
+  return '<div class="section-head"><div><div class="section-title">直播记录</div><div class="section-desc">共 ' + list.length + ' 条</div></div></div>' +
+    (list.length ? '<div class="record-list">' + list.map(renderRecordCard).join('') + '</div>' : '<div class="empty"><div class="empty-icon">▤</div><div class="empty-title">暂无记录</div><div class="empty-desc">到“打卡”页填写第一条直播数据。</div></div>');
+}
+
+function kpiCard(label, value, unit, sub, tone) {
+  return '<div class="kpi ' + tone + '"><div class="kpi-label">' + escapeHtml(label) + '</div><div class="kpi-value">' + escapeHtml(value) + '<small>' + escapeHtml(unit) + '</small></div><div class="kpi-sub">' + escapeHtml(sub) + '</div></div>';
 }
 
 function monthlyHostStats(records) {
@@ -869,52 +956,22 @@ function monthlyHostStats(records) {
   }).sort((a, b) => b.count - a.count || b.averagePeak - a.averagePeak);
 }
 
-function renderMonthlyRanking(rows) {
-  if (!rows.length) return '<div class="empty"><div class="empty-icon">▥</div><div class="empty-title">暂无月报</div><div class="empty-desc">新增直播记录后，这里会自动统计每位主持人的主持次数和平均高峰人数。</div></div>';
-  return '<div class="card">' + rows.map((row, index) =>
-    '<div class="monthly-card">' +
-      '<div class="rank-no ' + (index < 3 ? 'top' : '') + '">' + (index + 1) + '</div>' +
-      '<div class="monthly-main"><div class="monthly-name">' + escapeHtml(userName(row.hostId)) + '</div><div class="monthly-meta">' + row.count + ' 次 · ' + durationText(row.totalMinutes) + ' · 最高 ' + formatNumber(row.maxPeak) + ' 人</div></div>' +
-      '<div class="monthly-peak"><b>' + row.averagePeak.toFixed(row.averagePeak >= 100 ? 0 : 1) + '</b><span>平均' + escapeHtml(fieldName('peak', '高峰人数')) + '</span></div>' +
-    '</div>'
-  ).join('') + '</div>';
-}
-
-function renderRecords() {
-  const user = resolveUser();
-  const records = visibleRecords()
-    .filter((record) => String(record.date || '').startsWith(app.month))
-    .filter((record) => app.recordRoom === 'all' || Number(record.roomId) === Number(app.recordRoom))
-    .filter((record) => app.recordHost === 'all' || record.hostId === app.recordHost)
-    .sort((a, b) => String(b.date).localeCompare(String(a.date)) || Number(b.startMinutes) - Number(a.startMinutes));
-  const hosts = activeUsers().filter((item) => item.role === 'admin' || (item.roomIds || []).length);
-  return '<section>' +
-    '<div class="month-bar"><div class="month-switch"><button class="month-arrow" data-action="month-prev">‹</button><button class="month-current" data-action="month-picker">' + escapeHtml(monthLabel(app.month)) + '</button><button class="month-arrow" data-action="month-next">›</button></div><div class="muted" style="font-size:12px">共 ' + records.length + ' 条</div></div>' +
-    '<div class="filter-row"><button class="filter-chip ' + (app.recordRoom === 'all' ? 'active' : '') + '" data-action="record-room" data-value="all">全部直播间</button>' +
-      app.data.rooms.map((room) => '<button class="filter-chip ' + (Number(app.recordRoom) === Number(room.id) ? 'active' : '') + '" data-action="record-room" data-value="' + room.id + '">' + escapeHtml(room.name) + '</button>').join('') +
-    '</div>' +
-    ((user.role === 'admin' || user.viewAll) ?
-      '<div class="filter-row"><button class="filter-chip ' + (app.recordHost === 'all' ? 'active' : '') + '" data-action="record-host" data-value="all">全部主持人</button>' +
-      hosts.map((host) => '<button class="filter-chip ' + (app.recordHost === host.id ? 'active' : '') + '" data-action="record-host" data-value="' + host.id + '">' + escapeHtml(host.name) + '</button>').join('') + '</div>' : '') +
-    (records.length ? '<div class="record-list">' + records.map(renderRecordCard).join('') + '</div>' :
-      '<div class="empty"><div class="empty-icon">▤</div><div class="empty-title">本月暂无记录</div><div class="empty-desc">点击右下角“＋”新增直播数据，日期会自动带出今天，也可以滑动修改。</div></div>') +
-  '</section>';
-}
-
 function renderRecordCard(record) {
   const date = parseLocalDate(record.date);
   const room = roomById(record.roomId);
   const editable = canEditRecord(record);
+  const host = app.data.users.find((u) => u.id === record.hostId);
   const custom = customFields().map((field) => {
     const value = record.fields?.[field.key];
     if (value === undefined || value === null || value === '') return null;
     return '<span class="room-tag r2">' + escapeHtml(field.name) + '：' + escapeHtml(value) + '</span>';
   }).filter(Boolean).join('');
+  const violationTag = record.violation === '有' ? '<span class="room-tag r3">违规：' + escapeHtml(record.violationReason || '') + (record.violationResult ? ' · ' + escapeHtml(record.violationResult) : '') + '</span>' : '';
   return '<article class="record-card">' +
     '<div class="record-date"><div class="record-day">' + date.getDate() + '</div><div class="record-month">' + (date.getMonth() + 1) + '月</div></div>' +
     '<div class="record-main">' +
-      '<div class="record-title">' + escapeHtml(userName(record.hostId)) + '<span class="room-tag r' + Number(record.roomId) + '">' + escapeHtml(room.name) + '</span></div>' +
-      '<div class="record-meta">' + minutesToTime(record.startMinutes) + ' 开播 · ' + durationText(record.duration) + (record.note ? '<br>' + escapeHtml(record.note) : '') + (custom ? '<br>' + custom : '') + '</div>' +
+      '<div class="record-title">' + avatarHtml(host, 'avatar-xs') + escapeHtml(userName(record.hostId)) + '<span class="room-tag r' + Number(record.roomId) + '">' + escapeHtml(room.name) + '</span></div>' +
+      '<div class="record-meta">' + minutesToTime(record.startMinutes) + ' 开播 · ' + durationText(record.duration) + (violationTag ? '<br>' + violationTag : '') + (record.note ? '<br>' + escapeHtml(record.note) : '') + (custom ? '<br>' + custom : '') + '</div>' +
     '</div>' +
     '<div class="record-peak"><b>' + formatNumber(record.peak) + '</b><span>' + escapeHtml(fieldName('peak', '高峰人数')) + '</span></div>' +
     (editable ? '<button class="icon-btn" data-action="edit-record" data-id="' + record.id + '">✎</button>' : '') +
@@ -927,9 +984,16 @@ function renderStaff() {
     '<div class="hero" style="padding:19px">' +
       '<div class="hero-row"><div><div class="hero-label">团队邀请码</div><div style="font-size:20px;font-weight:850;letter-spacing:1.2px">' + escapeHtml(app.teamCode) + '</div><div class="hero-note">主持人扫码加入后，用手机号登录</div></div><button class="btn" style="background:rgba(255,255,255,.17);color:#fff;min-height:42px;padding:0 13px;font-size:12px" data-action="invite">生成二维码</button></div>' +
     '</div>' +
-    '<div class="section-head"><div><div class="section-title">主持人账号</div><div class="section-desc">设置登录账号和可使用的直播间范围</div></div><button class="link-btn" data-action="add-user">＋ 新增</button></div>' +
+    '<div class="section-head"><div><div class="section-title">直播间</div><div class="section-desc">名称可自定义</div></div><button class="link-btn" data-action="add-room">＋ 新增</button></div>' +
+    '<div class="record-list">' + app.data.rooms.map((room) => '<article class="card card-tight staff-card">' +
+      '<div class="staff-avatar">' + escapeHtml(String(room.name || '').slice(0, 1)) + '</div>' +
+      '<div class="staff-main"><div class="staff-name">' + escapeHtml(room.name) + '</div><div class="staff-phone">' + escapeHtml(room.channel || '视频号') + '</div></div>' +
+      '<button class="icon-btn" data-action="edit-room" data-id="' + room.id + '">✎</button>' +
+    '</article>').join('') + '</div>' +
+    '<div class="section-head" style="margin-top:18px"><div><div class="section-title">主持人账号</div><div class="section-desc">设置登录账号和可使用的直播间范围</div></div><button class="link-btn" data-action="add-user">＋ 新增</button></div>' +
     '<div class="record-list">' + users.map(renderStaffCard).join('') + '</div>' +
     '<div class="section-head" style="margin-top:18px"><div><div class="section-title">统计项</div><div class="section-desc">自定义每条直播记录要填写的数据项</div></div><button class="link-btn" data-action="manage-fields">管理</button></div>' +
+    '<button class="btn btn-soft btn-block" style="margin-bottom:10px" data-action="edit-violation-reasons">编辑“违规原因”选项</button>' +
   '</section>';
 }
 
@@ -952,23 +1016,22 @@ function renderProfile() {
   const rooms = user.role === 'admin' ? ['全部直播间'] : allowedRooms(user).map((room) => room.name);
   return '<section>' +
     '<div class="card">' +
-      '<div class="profile-head"><div class="profile-avatar">' + escapeHtml(userInitial(user.name)) + '</div><div><div class="profile-name">' + escapeHtml(user.name) + '</div><div class="profile-meta">' + escapeHtml(user.phone) + ' · ' + (user.role === 'admin' ? '管理员' : '主持人') + '</div><div class="staff-scope">' + rooms.map((name) => '<span class="scope-tag on">' + escapeHtml(name) + '</span>').join('') + '</div></div></div>' +
+      '<div class="profile-head">' +
+        '<div class="profile-avatar">' + escapeHtml(avatarText(user)) + '</div>' +
+        '<div style="flex:1;min-width:0"><div class="profile-name">' + escapeHtml(user.name) + '</div><div class="profile-meta">' + escapeHtml(user.phone) + ' · ' + (user.role === 'admin' ? '管理员' : '主持人') + '</div><div class="staff-scope">' + rooms.map((name) => '<span class="scope-tag on">' + escapeHtml(name) + '</span>').join('') + '</div></div>' +
+        '<button class="btn btn-soft" data-action="edit-profile">编辑资料</button>' +
+      '</div>' +
       '<div class="stat-row"><span class="stat-row-label">云端同步</span><span id="profile-sync-status" class="stat-row-value text-primary">' + escapeHtml(app.syncMessage) + '</span></div>' +
       '<div class="stat-row"><span class="stat-row-label">团队名称</span><span class="stat-row-value">' + escapeHtml(app.data.meta.teamName) + '</span></div>' +
       '<div class="stat-row"><span class="stat-row-label">数据版本</span><span class="stat-row-value">v' + Number(app.data.meta.revision || 1) + '</span></div>' +
-    '</div>' +
-    '<div class="section-head"><div class="section-title">应用</div></div>' +
-    '<div class="card card-tight">' +
-      '<button class="btn btn-primary btn-block" data-action="install">安装到手机桌面</button>' +
-      '<div class="btn-row" style="margin-top:10px"><button class="btn btn-soft" data-action="sync-now">立即同步</button>' + (user.role === 'admin' ? '<button class="btn btn-ghost" data-action="invite">邀请二维码</button>' : '') + '</div>' +
-      '<p class="form-hint" style="text-align:center">安卓 Chrome 安装后即成为独立桌面 App，无需应用商店。</p>' +
     '</div>' +
     '<div class="section-head"><div class="section-title">账号安全</div></div>' +
     '<div class="card card-tight"><button class="btn btn-ghost btn-block" data-action="change-password">修改登录密码</button></div>' +
     '<div class="section-head"><div class="section-title">数据管理</div></div>' +
     '<div class="card card-tight">' +
-      '<div class="btn-row"><button class="btn btn-soft" data-action="export-data">导出备份</button><button class="btn btn-soft" data-action="import-data">导入备份</button></div>' +
+      '<div class="btn-row"><button class="btn btn-soft" data-action="sync-now">立即同步</button><button class="btn btn-soft" data-action="export-data">导出备份</button><button class="btn btn-soft" data-action="import-data">导入备份</button></div>' +
       '<input id="import-file" type="file" accept="application/json,.json" style="display:none" />' +
+      (user.role === 'admin' ? '<button class="btn btn-ghost btn-block" style="margin-top:10px" data-action="invite">邀请二维码</button>' : '') +
       '<button class="btn btn-danger btn-block" style="margin-top:10px" data-action="logout">退出登录</button>' +
     '</div>' +
     '<p class="safe-note">直播数据统计 v' + APP_VERSION + '<br>数据经加密后保存，请妥善保管团队码。</p>' +
@@ -1072,14 +1135,9 @@ function roundToHalfHour(date = new Date()) {
   return Math.max(0, Math.min(1410, Math.round(minutes / 30) * 30));
 }
 
-function openRecordEditor(recordId) {
+function recordFormHtml(existing, inline) {
   const user = resolveUser();
-  if (!app.data || !user) return;
-  const existing = recordId ? app.data.records.find((item) => item.id === recordId && !item.deletedAt) : null;
-  if (existing && !canEditRecord(existing)) {
-    toast('你没有编辑这条记录的权限', 'error');
-    return;
-  }
+  if (!app.data || !user) return '';
   const editableHosts = user.role === 'admin' ? activeUsers() : [user];
   const initialHost = existing?.hostId || user.id;
   const initialRoom = existing?.roomId || allowedRooms(user)[0]?.id || app.data.rooms[0]?.id || 1;
@@ -1088,6 +1146,9 @@ function openRecordEditor(recordId) {
   const initialDuration = Number(existing?.duration) || 60;
   const initialPeak = existing?.peak ?? '';
   const initialNote = existing?.note || '';
+  const initialViolation = existing?.violation || '无';
+  const initialViolationReason = existing?.violationReason || '';
+  const initialViolationResult = existing?.violationResult || '';
   const fields = app.data.fields || DEFAULT_FIELDS;
 
   const dateItems = [];
@@ -1113,6 +1174,14 @@ function openRecordEditor(recordId) {
     return existing?.fields?.[field.key] ?? '';
   };
 
+  const violationOptions = ['无', '有'].map((v) => '<button type="button" class="option ' + (initialViolation === v ? 'active' : '') + '" data-action="violation-toggle" data-value="' + v + '">' + v + '</button>').join('');
+  const reasonOptions = (app.data.violationReasons || DEFAULT_VIOLATION_REASONS).map((r) => '<button type="button" class="option ' + (initialViolationReason === r ? 'active' : '') + '" data-action="violation-reason" data-value="' + escapeHtml(r) + '">' + escapeHtml(r) + '</button>').join('');
+  const violationHtml = '<div class="form-group"><label class="form-label">有无违规</label><div class="option-grid" id="violation-options">' + violationOptions + '</div></div>' +
+    '<div id="violation-detail" style="' + (initialViolation === '有' ? '' : 'display:none') + '">' +
+      '<div class="form-group"><label class="form-label">违规原因</label><div class="option-grid" id="violation-reason-options">' + reasonOptions + '</div></div>' +
+      '<div class="form-group"><label class="form-label">处罚结果</label><textarea id="violation-result" class="input" rows="2" maxlength="120" placeholder="请输入处罚结果">' + escapeHtml(initialViolationResult) + '</textarea></div>' +
+    '</div>';
+
   const fieldHtml = fields.map((field) => {
     const name = escapeHtml(field.name);
     if (field.key === 'date') {
@@ -1121,6 +1190,7 @@ function openRecordEditor(recordId) {
     }
     if (field.key === 'start') return wheelHtml('record-start', field.name, timeItems, initialStart, true);
     if (field.key === 'duration') return wheelHtml('record-duration', field.name, durationItems, initialDuration);
+    if (field.key === 'violation') return violationHtml;
     if (field.type === 'number') {
       const step = field.key === 'peak' ? 10 : 1;
       return '<div class="picker-block"><div class="picker-label"><span>' + name + '</span><small>手工填写</small></div><div class="peak-row">' +
@@ -1137,23 +1207,44 @@ function openRecordEditor(recordId) {
       return '<div class="form-group"><label class="form-label">' + name + '</label><div class="option-grid">' + options + '</div></div>';
     }
     if (field.key === 'note') {
-      return '<div class="form-group"><label class="form-label">' + name + '</label><textarea id="field-note" class="input" maxlength="120" placeholder="例如：节日场、活动场、异常情况">' + escapeHtml(initialNote) + '</textarea></div>';
+      return '<div class="form-group"><label class="form-label">' + name + '</label><textarea id="field-note" class="input" rows="2" maxlength="120" placeholder="例如：节日场、活动场、异常情况">' + escapeHtml(initialNote) + '</textarea></div>';
     }
     return '<div class="form-group"><label class="form-label">' + name + '</label><input id="field-' + field.key + '" class="input" maxlength="120" value="' + escapeHtml(valueOf(field)) + '" placeholder="请输入" /></div>';
   }).join('');
 
-  const body = '<div>' +
-    (user.role === 'admin' ? wheelHtml('record-host', '主持人', hostItems, initialHost, true) : '<div class="form-group"><label class="form-label">主持人</label><div class="input" style="display:flex;align-items:center;justify-content:space-between"><span>' + escapeHtml(user.name) + '</span><span class="muted" style="font-size:12px">当前账号</span></div></div>') +
-    wheelHtml('record-room', '直播间', roomItems, initialRoom, true) +
-    fieldHtml +
-    '<div class="record-form-actions"><button class="btn btn-ghost" data-action="close-sheet">取消</button><button class="btn btn-primary" data-action="save-record" data-id="' + (existing?.id || '') + '">' + (existing ? '保存修改' : '保存记录') + '</button></div>' +
-    (existing ? '<button class="btn btn-danger btn-block" style="margin-top:10px" data-action="delete-record" data-id="' + existing.id + '">删除这条记录</button>' : '') +
-  '</div>';
-  openSheet(existing ? '编辑直播记录' : '新增直播记录', body, { onMount: bindWheels });
+  const hostHtml = user.role === 'admin'
+    ? wheelHtml('record-host', '主持人', hostItems, initialHost, true)
+    : '<div class="form-group"><label class="form-label">主持人</label><div class="input" style="display:flex;align-items:center;justify-content:space-between"><span>' + escapeHtml(user.name) + '</span><span class="muted" style="font-size:12px">当前账号</span></div></div>';
+
+  const buttons = inline
+    ? '<button class="btn btn-primary btn-block" style="min-height:50px;font-size:16px" data-action="save-record" data-id="">提交打卡</button>'
+    : '<div class="record-form-actions"><button class="btn btn-ghost" data-action="close-sheet">取消</button><button class="btn btn-primary" data-action="save-record" data-id="' + (existing?.id || '') + '">' + (existing ? '保存修改' : '保存记录') + '</button></div>' + (existing ? '<button class="btn btn-danger btn-block" style="margin-top:10px" data-action="delete-record" data-id="' + existing.id + '">删除这条记录</button>' : '');
+
+  return '<div>' + hostHtml + wheelHtml('record-room', '直播间', roomItems, initialRoom, true) + fieldHtml + buttons + '</div>';
+}
+
+function openRecordEditor(recordId) {
+  const user = resolveUser();
+  if (!app.data || !user) return;
+  const existing = recordId ? app.data.records.find((item) => item.id === recordId && !item.deletedAt) : null;
+  if (existing && !canEditRecord(existing)) {
+    toast('你没有编辑这条记录的权限', 'error');
+    return;
+  }
+  openSheet(existing ? '编辑直播记录' : '新增直播记录', recordFormHtml(existing, false), { onMount: bindWheels });
+}
+
+function renderHome() {
+  const user = resolveUser();
+  return '<section>' +
+    '<div class="hero"><div class="hero-row"><div><div class="hero-label">' + escapeHtml(dateLabel(localDate())) + ' 打卡</div><div class="hero-value">直播数据</div><div class="hero-note">' + escapeHtml(user.name) + ' · 填写完成后点击“提交打卡”</div></div>' + renderSyncBadge() + '</div></div>' +
+    '<div class="card" style="margin-top:14px;padding:18px 16px">' + recordFormHtml(null, true) + '</div>' +
+  '</section>';
 }
 
 async function saveRecord(id) {
   const user = resolveUser();
+  const fromHome = app.tab === 'home';
   const hostId = user.role === 'admin' ? getWheelValue('record-host') : user.id;
   const roomId = Number(getWheelValue('record-room'));
   const date = getWheelValue('record-date');
@@ -1162,8 +1253,12 @@ async function saveRecord(id) {
   const peakText = String($('#field-peak')?.value || '').trim();
   const peak = Number(peakText);
   const note = String($('#field-note')?.value || '').trim();
+  const violation = $('[data-action="violation-toggle"].active')?.dataset.value || '无';
+  const violationReason = violation === '有' ? String($('[data-action="violation-reason"].active')?.dataset.value || '').trim() : '';
+  const violationResult = violation === '有' ? String($('#violation-result')?.value || '').trim() : '';
   if (!hostId || !roomId || !date) { toast('请选择主持人和直播间', 'error'); return; }
   if (!peakText || !Number.isFinite(peak) || peak < 0) { toast('请手工填写' + fieldName('peak', '在线高峰人数'), 'error'); return; }
+  if (violation === '有' && !violationReason) { toast('请选择违规原因', 'error'); return; }
   if (user.role !== 'admin') {
     const host = app.data.users.find((item) => item.id === user.id);
     if (!host || !(host.roomIds || []).map(Number).includes(roomId)) { toast('你没有该直播间的使用权限', 'error'); return; }
@@ -1186,17 +1281,22 @@ async function saveRecord(id) {
     let record = id ? data.records.find((item) => item.id === id && !item.deletedAt) : null;
     if (record) {
       if (!canEditRecord(record)) throw new Error('没有编辑权限');
-      Object.assign(record, { hostId, roomId, date, startMinutes, duration, peak, note, fields: customValues, updatedAt: now });
+      Object.assign(record, { hostId, roomId, date, startMinutes, duration, peak, note, violation, violationReason, violationResult, fields: customValues, updatedAt: now });
     } else {
-      record = { id: uid('rec'), hostId, roomId, date, startMinutes, duration, peak, note, fields: customValues, createdAt: now, updatedAt: now, createdBy: user.id };
+      record = { id: uid('rec'), hostId, roomId, date, startMinutes, duration, peak, note, violation, violationReason, violationResult, fields: customValues, createdAt: now, updatedAt: now, createdBy: user.id };
       data.records.push(record);
     }
   });
-  closeSheet();
-  toast('直播记录已保存', 'success');
-  app.tab = 'records';
-  app.month = monthKey(date);
-  render();
+  if (fromHome) {
+    toast('打卡成功', 'success');
+    render();
+  } else {
+    closeSheet();
+    toast('直播记录已保存', 'success');
+    app.tab = 'stats';
+    app.month = monthKey(date);
+    render();
+  }
 }
 
 function deleteRecord(id) {
@@ -1236,7 +1336,7 @@ function confirmMonth() {
   const month = Number(getWheelValue('month-number'));
   if (!year || !month) return;
   app.month = year + '-' + String(month).padStart(2, '0');
-  app.tab = 'dashboard';
+  app.range = 'month';
   closeSheet();
   render();
 }
@@ -1257,7 +1357,7 @@ function openUserEditor(userId) {
     '<div class="form-group"><label class="form-label">登录手机号</label><input id="user-phone" class="input" inputmode="numeric" maxlength="11" value="' + escapeHtml(phone) + '" placeholder="11 位手机号" /></div>' +
     '<div class="form-group"><label class="form-label">账号角色</label><div class="input" style="display:flex;align-items:center">' + (role === 'admin' ? '管理员（团队唯一）' : '主持人') + '</div></div>' +
     '<div class="form-group"><label class="form-label">可使用直播间</label><div class="option-grid" id="user-room-options">' + roomOptions + '</div><div class="form-hint">管理员默认拥有全部权限；主持人只能录入和修改被勾选直播间的数据。</div></div>' +
-    '<div class="card card-tight" style="margin-bottom:15px"><button type="button" class="check-row" style="width:100%;text-align:left" data-action="toggle-view-all"><span id="view-all-box" class="check-box ' + (viewAll ? 'checked' : '') + '">✓</span><span class="check-label">可查看全部主持人的统计</span></button></div>' +
+    '<div class="form-group"><label class="form-label">数据查看权限</label><div class="option-grid" id="user-scope-options"><button type="button" class="option ' + (!viewAll ? 'active' : '') + '" data-action="user-scope" data-value="self">只能查看自己数据</button><button type="button" class="option ' + (viewAll ? 'active' : '') + '" data-action="user-scope" data-value="all">可查看全部数据</button></div><div class="form-hint">“只能查看自己数据”指只能看到自己添加的统计记录。</div></div>' +
     (editing ? '<div class="card card-tight" style="margin-bottom:15px"><button type="button" class="check-row" style="width:100%;text-align:left" data-action="toggle-user-status"' + (isSelf ? ' disabled' : '') + '><span id="user-status-box" class="check-box ' + (disabled ? '' : 'checked') + '">✓</span><span class="check-label">账号启用</span></button></div>' : '') +
     '<div class="info-banner">' + (editing ? '如需将密码重置为手机号后 6 位，请点击下方按钮。' : '新账号默认密码为手机号后 6 位。') + '</div>' +
     '<div class="record-form-actions"><button class="btn btn-ghost" data-action="close-sheet">取消</button><button class="btn btn-primary" data-action="save-user" data-id="' + (editing?.id || '') + '">保存</button></div>' +
@@ -1274,7 +1374,7 @@ async function saveUser(id) {
   const phone = String($('#user-phone')?.value || '').trim();
   const role = (id ? app.data.users.find((user) => user.id === id && !user.deletedAt) : null)?.role === 'admin' ? 'admin' : 'host';
   const roomIds = $$('.option.active[data-action="toggle-room-option"]').map((el) => Number(el.dataset.room));
-  const viewAll = $('#view-all-box')?.classList.contains('checked');
+  const viewAll = $('[data-action="user-scope"].active')?.dataset.value === 'all';
   const enabled = $('#user-status-box') ? $('#user-status-box').classList.contains('checked') : true;
   if (!name) { toast('请输入姓名', 'error'); return; }
   if (!/^1\d{10}$/.test(phone)) { toast('请输入正确的 11 位手机号', 'error'); return; }
@@ -1354,7 +1454,7 @@ function deleteUser(id) {
 function manageFields() {
   if (!canManageUsers()) return;
   const fields = app.data.fields || DEFAULT_FIELDS;
-  const typeLabel = { date: '日期', time: '时间', duration: '时长', number: '数字', text: '文本', select: '选项' };
+  const typeLabel = { date: '日期', time: '时间', duration: '时长', number: '数字', text: '文本', select: '选项', violation: '违规' };
   const body = '<div>' +
     fields.map((field) =>
       '<div class="card card-tight" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">' +
@@ -1434,6 +1534,79 @@ function deleteField(fieldId) {
   });
 }
 
+function openRoomEditor(roomId) {
+  if (!canManageUsers()) return;
+  const room = roomId ? app.data.rooms.find((r) => String(r.id) === String(roomId)) : { id: '', name: '', channel: '视频号' };
+  app.editingRoomId = roomId || '';
+  const body = '<div>' +
+    '<div class="form-group"><label class="form-label">直播间名称</label><input id="room-name" class="input" maxlength="20" value="' + escapeHtml(room.name) + '" placeholder="例如：一号直播间" /></div>' +
+    '<div class="record-form-actions"><button class="btn btn-ghost" data-action="close-sheet">取消</button><button class="btn btn-primary" data-action="save-room">保存</button></div>' +
+  '</div>';
+  openSheet(roomId ? '编辑直播间' : '新增直播间', body);
+}
+
+async function saveRoom() {
+  if (!canManageUsers()) return;
+  const name = String($('#room-name')?.value || '').trim();
+  if (!name) { toast('请输入直播间名称', 'error'); return; }
+  await commitChange((data) => {
+    const id = app.editingRoomId;
+    if (id) {
+      const room = data.rooms.find((r) => String(r.id) === String(id));
+      if (room) room.name = name;
+    } else {
+      const newId = Math.max(0, ...data.rooms.map((r) => Number(r.id))) + 1;
+      data.rooms.push({ id: newId, name, channel: '视频号' });
+    }
+  });
+  app.editingRoomId = '';
+  closeSheet();
+  toast('直播间已保存', 'success');
+  render();
+}
+
+function openProfileEditor() {
+  const user = resolveUser();
+  if (!user) return;
+  app.profileAvatar = user.avatar || '';
+  const body = '<div>' +
+    '<div class="form-group"><label class="form-label">选择头像</label><div class="avatar-grid">' + AVATARS.map((a) => '<button type="button" class="avatar-option ' + (app.profileAvatar === a ? 'active' : '') + '" data-action="avatar" data-value="' + a + '">' + a + '</button>').join('') + '</div></div>' +
+    '<div class="form-group"><label class="form-label">名称</label><input id="profile-name" class="input" maxlength="20" value="' + escapeHtml(user.name) + '" placeholder="请输入名称" /></div>' +
+    '<div class="record-form-actions"><button class="btn btn-ghost" data-action="close-sheet">取消</button><button class="btn btn-primary" data-action="save-profile">保存</button></div>' +
+  '</div>';
+  openSheet('编辑我的资料', body);
+}
+
+async function saveProfile() {
+  const name = String($('#profile-name')?.value || '').trim();
+  if (!name) { toast('请输入名称', 'error'); return; }
+  const avatar = app.profileAvatar || '';
+  await commitChange((data) => {
+    const u = data.users.find((x) => x.id === resolveUser().id);
+    if (u) { u.name = name; u.avatar = avatar; }
+  });
+  closeSheet();
+  toast('资料已保存', 'success');
+}
+
+function openViolationReasons() {
+  if (!canManageUsers()) return;
+  const body = '<div>' +
+    '<div class="form-group"><label class="form-label">违规原因选项（每行一个）</label><textarea id="violation-reasons-input" class="input" rows="7" placeholder="低俗内容&#10;违规广告&#10;虚假宣传">' + escapeHtml((app.data.violationReasons || []).join('\n')) + '</textarea></div>' +
+    '<div class="record-form-actions"><button class="btn btn-ghost" data-action="close-sheet">取消</button><button class="btn btn-primary" data-action="save-violation-reasons">保存</button></div>' +
+  '</div>';
+  openSheet('编辑违规原因选项', body);
+}
+
+async function saveViolationReasons() {
+  if (!canManageUsers()) return;
+  const list = String($('#violation-reasons-input')?.value || '').split('\n').map((x) => x.trim()).filter(Boolean);
+  if (!list.length) { toast('请至少填写一个选项', 'error'); return; }
+  await commitChange((data) => { data.violationReasons = list; });
+  closeSheet();
+  toast('违规原因已保存', 'success');
+}
+
 function openChangePassword() {
   const body = '<div>' +
     '<div class="form-group"><label class="form-label">当前密码</label><input id="old-password" class="input" type="password" maxlength="32" autocomplete="current-password" /></div>' +
@@ -1477,7 +1650,7 @@ function openInvite() {
     '<div class="invite-code">' + escapeHtml(app.teamCode) + '</div>' +
     '<div class="info-banner">让主持人在手机浏览器中扫描上面的二维码，应用会自动填入团队码。加入后使用管理员设置的手机号和初始密码登录。</div>' +
     '<div class="btn-row" style="margin-top:14px"><button class="btn btn-soft" data-action="copy-invite">复制邀请链接</button><button class="btn btn-primary" data-action="share-invite">分享</button></div>' +
-    '<button class="btn btn-ghost btn-block" style="margin-top:10px" data-action="install">先安装到这个手机</button>' +
+    
   '</div>';
   openSheet('邀请主持人加入', body, {
     onMount: () => {
@@ -1700,6 +1873,35 @@ document.addEventListener('click', async (event) => {
       $$('[data-action="field-option"][data-key="' + target.dataset.key + '"]').forEach((el) => el.classList.toggle('active', el === target));
       return;
     }
+    if (action === 'range') { app.range = target.dataset.value || 'month'; render(); return; }
+    if (action === 'year-prev') { app.year -= 1; render(); return; }
+    if (action === 'year-next') { app.year += 1; render(); return; }
+    if (action === 'violation-toggle') {
+      $$('[data-action="violation-toggle"]').forEach((el) => el.classList.toggle('active', el === target));
+      const detail = $('#violation-detail');
+      if (detail) detail.style.display = target.dataset.value === '有' ? '' : 'none';
+      return;
+    }
+    if (action === 'violation-reason') {
+      $$('[data-action="violation-reason"]').forEach((el) => el.classList.toggle('active', el === target));
+      return;
+    }
+    if (action === 'add-room') { openRoomEditor(''); return; }
+    if (action === 'edit-room') { openRoomEditor(target.dataset.id); return; }
+    if (action === 'save-room') { await saveRoom(); return; }
+    if (action === 'edit-profile') { openProfileEditor(); return; }
+    if (action === 'save-profile') { await saveProfile(); return; }
+    if (action === 'avatar') {
+      app.profileAvatar = target.dataset.value || '';
+      $$('[data-action="avatar"]').forEach((el) => el.classList.toggle('active', el === target));
+      return;
+    }
+    if (action === 'user-scope') {
+      $$('[data-action="user-scope"]').forEach((el) => el.classList.toggle('active', el === target));
+      return;
+    }
+    if (action === 'edit-violation-reasons') { openViolationReasons(); return; }
+    if (action === 'save-violation-reasons') { await saveViolationReasons(); return; }
     if (action === 'save-record') { await saveRecord(target.dataset.id || ''); return; }
     if (action === 'delete-record') { deleteRecord(target.dataset.id); return; }
     if (action === 'add-user') { openUserEditor(); return; }
@@ -1817,8 +2019,20 @@ async function boot() {
   await registerPwa();
   if (app.teamCode) await initSync();
   if (pendingAddRecord && resolveUser()) {
-    setTimeout(() => openRecordEditor(), 500);
+    app.tab = 'home';
+    render();
   }
 }
+
+window.__handleBack = function() {
+  try {
+    const sheet = $('#sheet-root');
+    const modal = $('#modal-root');
+    if (modal && modal.children.length > 0) { closeModal(); return 'true'; }
+    if (sheet && sheet.children.length > 0) { closeSheet(); return 'true'; }
+    if (app.tab !== 'home') { app.tab = 'home'; render(); return 'true'; }
+  } catch (e) {}
+  return 'false';
+};
 
 window.addEventListener('DOMContentLoaded', boot);

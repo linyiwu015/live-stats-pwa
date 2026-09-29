@@ -12,8 +12,8 @@
     "minimal-ui"
   ],
   "orientation": "portrait",
-  "background_color": "#f4f6fb",
-  "theme_color": "#5b5ce2",
+  "background_color": "#f2f7f3",
+  "theme_color": "#2f9e44",
   "lang": "zh-CN",
   "categories": [
     "business",
@@ -54,7 +54,7 @@
     {
       "name": "查看月度统计",
       "short_name": "月度统计",
-      "url": "./?view=dashboard",
+      "url": "./?view=stats",
       "icons": [
         {
           "src": "./icons/icon-192.png",
