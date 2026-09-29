@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const STORAGE = {
   state: 'liveStats.state.v1',
@@ -1664,6 +1664,7 @@ document.addEventListener('click', async (event) => {
         await initSync();
         toast('正在重新连接云同步');
       }
+      checkAppUpdateAndReload();
       return;
     }
     if (action === 'month-prev') { app.month = addMonths(app.month, -1); render(); return; }
@@ -1774,6 +1775,18 @@ async function registerPwa() {
   if (navigator.storage?.persist) {
     try { await navigator.storage.persist(); } catch {}
   }
+}
+
+
+async function checkAppUpdateAndReload() {
+  try {
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) await reg.update();
+    }
+  } catch (e) {}
+  toast('数据已同步，正在刷新到最新版本…', 'success');
+  setTimeout(() => { location.reload(); }, 900);
 }
 
 async function boot() {
