@@ -1,12 +1,13 @@
 'use strict';
 
-const APP_VERSION = '1.5.7';
+const APP_VERSION = '1.5.8';
 const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const STORAGE = {
   state: 'liveStats.state.v1',
   team: 'liveStats.team.v1',
   session: 'liveStats.session.v1',
-  dirty: 'liveStats.dirty.v1'
+  dirty: 'liveStats.dirty.v1',
+  tab: 'liveStats.tab.v1'
 };
 const DEFAULT_ROOMS = [
   { id: 1, name: '一号直播间', channel: '视频号' },
@@ -67,6 +68,11 @@ const app = {
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+const VALID_TABS = ['home', 'stats', 'staff', 'profile'];
+function setTab(tab) {
+  app.tab = VALID_TABS.includes(tab) ? tab : 'home';
+  try { localStorage.setItem(STORAGE.tab, app.tab); } catch (e) {}
+}
 
 function uid(prefix = 'id') {
   if (crypto.randomUUID) return prefix + '_' + crypto.randomUUID().replace(/-/g, '').slice(0, 20);
@@ -306,6 +312,8 @@ function loadLocalState() {
   app.data = normalizeState(readJson(STORAGE.state, null));
   app.session = readJson(STORAGE.session, null);
   app.dirty = readJson(STORAGE.dirty, false) === true;
+  const savedTab = localStorage.getItem(STORAGE.tab);
+  app.tab = VALID_TABS.includes(savedTab) ? savedTab : 'home';
   if (app.session?.expiresAt && Number(app.session.expiresAt) < Date.now()) {
     app.session = null;
     localStorage.removeItem(STORAGE.session);
@@ -1411,7 +1419,7 @@ async function saveRecord(id) {
   } else {
     closeSheet();
     toast('直播记录已保存', 'success');
-    app.tab = 'stats';
+    setTab('stats');
     app.month = monthKey(date);
     render();
   }
@@ -1863,7 +1871,7 @@ async function createTeam() {
   app.data = createInitialState(teamName, admin);
   app.session = { userId: adminId, expiresAt: Date.now() + 10 * 365 * 24 * 60 * 60 * 1000, createdAt: Date.now() };
   saveLocalState({ dirty: true });
-  app.tab = 'staff';
+  setTab('staff');
   render();
   await initSync();
   setTimeout(() => publishState(), 1000);
@@ -1894,7 +1902,7 @@ async function login() {
   if (!(await verifyPassword(password, user.password))) { toast('密码错误', 'error'); return; }
   app.session = { userId: user.id, expiresAt: Date.now() + 10 * 365 * 24 * 60 * 60 * 1000, createdAt: Date.now() };
   saveLocalState({ dirty: app.dirty });
-  app.tab = user.role === 'admin' ? 'dashboard' : 'records';
+  setTab('home');
   render();
   toast('登录成功，已长期保持登录', 'success');
 }
@@ -1931,7 +1939,7 @@ async function leaveTeam() {
       localStorage.removeItem(STORAGE.session);
       writeJson(STORAGE.dirty, false);
       app.authMode = 'create';
-      app.tab = 'dashboard';
+      setTab('home');
       render();
     }
   });
@@ -1960,7 +1968,7 @@ document.addEventListener('click', async (event) => {
     if (action === 'tab') {
       const tab = target.dataset.tab;
       if (tab === 'staff' && !canManageUsers()) return;
-      app.tab = tab;
+      setTab(tab);
       render();
       return;
     }
@@ -2196,7 +2204,7 @@ async function boot() {
   await registerPwa();
   if (app.teamCode) await initSync();
   if (pendingAddRecord && resolveUser()) {
-    app.tab = 'home';
+    setTab('home');
     render();
   }
 }
@@ -2207,7 +2215,7 @@ window.__handleBack = function() {
     const modal = $('#modal-root');
     if (modal && modal.children.length > 0) { closeModal(); return 'true'; }
     if (sheet && sheet.children.length > 0) { closeSheet(); return 'true'; }
-    if (app.tab !== 'home') { app.tab = 'home'; render(); return 'true'; }
+    if (app.tab !== 'home') { setTab('home'); render(); return 'true'; }
   } catch (e) {}
   return 'false';
 };
