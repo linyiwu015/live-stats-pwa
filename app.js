@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '1.5.4';
+const APP_VERSION = '1.5.5';
 const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const STORAGE = {
   state: 'liveStats.state.v1',
@@ -992,7 +992,7 @@ function renderUserRoomStats(records) {
       '<div class="user-room-grid">' + roomCells + '</div>' +
     '</div>';
   }).join('');
-  return '<div class="section-head"><div><div class="section-title">按主持人统计</div><div class="section-desc">各主持人主持总次数，及各直播间分别主持次数</div></div></div>' +
+  return '<div class="section-head"><div><div class="section-title">主持统计</div><div class="section-desc">各主持人主持总次数，及各直播间分别主持次数</div></div></div>' +
     '<div class="card">' + rows + '</div>';
 }
 
@@ -1356,7 +1356,8 @@ function openRecordEditor(recordId) {
 function renderHome() {
   const user = resolveUser();
   return '<section>' +
-    '<div class="hero"><div class="hero-row"><div><div class="hero-label">' + escapeHtml(dateLabel(localDate())) + ' 打卡</div><div class="hero-value">直播数据</div><div class="hero-note">' + escapeHtml(user.name) + ' · 填写完成后点击“提交打卡”</div></div>' + renderSyncBadge() + '</div></div>' +
+    '<div class="hero"><div class="hero-row"><div><div class="hero-label">' + escapeHtml(dateLabel(localDate())) + ' 打卡</div><div class="hero-value">直播数据</div><div class="hero-note">' + escapeHtml(user.name) + ' · 填写完成后点击“提交打卡”</div></div>' +
+      '<div class="hero-right"><img class="hero-logo" src="icons/brand-logo.png" alt="文播直播统计" />' + renderSyncBadge() + '</div></div></div>' +
     '<div class="card" style="margin-top:14px;padding:18px 16px">' + recordFormHtml(null, true) + '</div>' +
   '</section>';
 }
