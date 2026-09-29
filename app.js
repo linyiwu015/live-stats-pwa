@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.5.0';
 const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const STORAGE = {
   state: 'liveStats.state.v1',
@@ -845,6 +845,7 @@ function renderStats() {
       kpiCard('直播次数', formatNumber(summary.count), '次', records.length + ' 条记录', '') +
     '</div>' +
     renderRoomChart(records) +
+    renderRoomTrends(records) +
     renderUserRoomStats(records) +
     renderTrendCard(records) +
     renderRecordsList(records) +
@@ -898,6 +899,40 @@ function renderRoomChart(records) {
   }).join('');
   return '<div class="section-head"><div><div class="section-title">各直播间高峰人数</div><div class="section-desc">柱高=平均' + escapeHtml(fieldName('peak', '高峰人数')) + '，下方为直播次数</div></div></div>' +
     '<div class="card chart-card">' + (records.length ? '<div class="chart-scroll"><div class="chart-inner">' + bars + '</div></div>' : '<div class="chart-empty">暂无数据</div>') + '</div>';
+}
+
+function renderRoomTrends(records) {
+  if (app.range === 'today' || app.range === 'yesterday') return '';
+  const buckets = [];
+  if (app.range === 'year') {
+    for (let m = 1; m <= 12; m++) buckets.push({ key: String(app.year) + '-' + String(m).padStart(2, '0'), label: m + '月' });
+  } else {
+    const days = daysInMonth(app.month);
+    for (let day = 1; day <= days; day++) buckets.push({ key: app.month + '-' + String(day).padStart(2, '0'), label: day + '日' });
+  }
+  const roomCharts = app.data.rooms.map((room) => {
+    const rs = records.filter((r) => Number(r.roomId) === Number(room.id));
+    const values = buckets.map((b) => {
+      const list = rs.filter((r) => String(r.date || '').startsWith(b.key));
+      const peakValues = list.map((r) => Number(r.peak) || 0);
+      const avg = peakValues.length ? peakValues.reduce((sum, v) => sum + v, 0) / peakValues.length : 0;
+      return { label: b.label, avg, count: list.length };
+    });
+    const maxV = Math.max(1, ...values.map((v) => v.avg));
+    const bars = values.map((v) => {
+      const height = v.avg > 0 ? Math.max(4, (v.avg / maxV) * 72) : 2;
+      return '<div class="mini-bar-col">' +
+        '<div class="mini-bar-track"><div class="mini-bar-fill" style="height:' + height + 'px"></div></div>' +
+        '<div class="mini-bar-label">' + escapeHtml(v.label) + '</div>' +
+      '</div>';
+    }).join('');
+    return '<div class="room-trend">' +
+      '<div class="room-trend-head"><span class="room-tag r' + Number(room.id) + '">' + escapeHtml(room.name) + '</span><span class="room-trend-count">' + rs.length + ' 次</span></div>' +
+      '<div class="chart-scroll"><div class="chart-inner">' + bars + '</div></div>' +
+    '</div>';
+  }).join('');
+  return '<div class="section-head"><div><div class="section-title">各直播间' + escapeHtml(fieldName('peak', '高峰人数')) + '趋势</div><div class="section-desc">' + (app.range === 'year' ? app.year + '年按月' : monthLabel(app.month) + '按日') + '柱状趋势</div></div></div>' +
+    '<div class="card chart-card">' + roomCharts + '</div>';
 }
 
 function renderUserRoomStats(records) {
