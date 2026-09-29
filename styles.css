@@ -172,3 +172,5 @@ textarea.input{height:auto;padding:14px 15px;resize:vertical;min-height:88px}
 .user-room-cell .room-avg{font-size:10px;color:var(--muted);margin-top:2px}
 .bar-sub{font-size:10px;color:var(--muted);text-align:center;margin-top:3px}
 .fab{display:none!important}
+
+.avatar,.avatar-xs,.avatar-sm,.avatar-md,.avatar-button,.profile-avatar,.staff-avatar{overflow:hidden}

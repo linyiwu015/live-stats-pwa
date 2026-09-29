@@ -1,6 +1,6 @@
 {
-  "name": "直播数据统计",
-  "short_name": "直播统计",
+  "name": "文播直播统计",
+  "short_name": "文播直播统计",
   "description": "主持人直播数据记录、月度汇总与趋势分析",
   "id": "./",
   "start_url": "./",
