@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '1.5.2';
+const APP_VERSION = '1.5.3';
 const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const STORAGE = {
   state: 'liveStats.state.v1',
@@ -721,13 +721,21 @@ function afterRender() {
 }
 
 function centerRoomTrends() {
-  $('.room-trend-scroll').forEach((sc) => {
+  $$('.room-trend-scroll').forEach((sc) => {
+    if (!sc.clientWidth) return;
+    const first = $('.mini-bar-col', sc);
+    const itemW = first ? first.offsetWidth : 24;
+    const pad = Math.max(0, (sc.clientWidth - itemW) / 2);
+    const lead = $('.chart-spacer-lead', sc);
+    const trail = $('.chart-spacer-trail', sc);
+    if (lead) lead.style.width = pad + 'px';
+    if (trail) trail.style.width = pad + 'px';
     const today = $('.mini-bar-col.is-today', sc);
     let target;
     if (today) {
       const scRect = sc.getBoundingClientRect();
       const tRect = today.getBoundingClientRect();
-      target = sc.scrollLeft + (tRect.left - scRect.left) - (sc.clientWidth / 2) + (tRect.width / 2);
+      target = sc.scrollLeft + (tRect.left - scRect.left) - (sc.clientWidth - tRect.width) / 2;
     } else {
       target = sc.scrollWidth;
     }
@@ -943,7 +951,7 @@ function renderRoomTrends() {
     }).join('');
     return '<div class="room-trend">' +
       '<div class="room-trend-head"><span class="room-tag r' + Number(room.id) + '">' + escapeHtml(room.name) + '</span><span class="room-trend-count">' + rs.length + ' 次</span></div>' +
-      '<div class="chart-scroll room-trend-scroll" id="room-trend-scroll-' + Number(room.id) + '"><div class="chart-inner chart-inner-mini">' + bars + '</div></div>' +
+      '<div class="chart-scroll room-trend-scroll" id="room-trend-scroll-' + Number(room.id) + '"><div class="chart-inner chart-inner-mini"><div class="chart-spacer chart-spacer-lead"></div>' + bars + '<div class="chart-spacer chart-spacer-trail"></div></div></div>' +
     '</div>';
   }).join('');
   return '<div class="section-head"><div><div class="section-title">各直播间' + escapeHtml(fieldName('peak', '高峰人数')) + '趋势</div><div class="section-desc">' + monthLabel(app.month) + '按日柱状趋势（默认居中于今日，可左右滑动）</div></div></div>' +
@@ -955,20 +963,25 @@ function renderUserRoomStats(records) {
   if (!users.length) return '';
   const rows = users.map((u) => {
     const ur = records.filter((r) => r.hostId === u.id);
+    const totalCount = ur.length;
+    const totalAvg = totalCount ? ur.reduce((sum, r) => sum + (Number(r.peak) || 0), 0) / totalCount : 0;
     const roomCells = app.data.rooms.map((room) => {
       const rs = ur.filter((r) => Number(r.roomId) === Number(room.id));
       const count = rs.length;
       const avgPeak = count ? rs.reduce((sum, r) => sum + (Number(r.peak) || 0), 0) / count : 0;
-      return '<div class="user-room-cell"><div class="room-name">' + escapeHtml(room.name) + '</div><div class="room-count">' + count + ' 次</div><div class="room-avg">均峰 ' + (avgPeak ? avgPeak.toFixed(avgPeak >= 100 ? 0 : 1) : '0') + '</div></div>';
+      const pct = totalCount ? Math.round((count / totalCount) * 100) : 0;
+      return '<div class="user-room-cell">' +
+        '<div class="user-room-row"><span class="room-name">' + escapeHtml(room.name) + '</span><span class="room-count">' + count + ' 次</span></div>' +
+        '<div class="user-room-bar"><div class="user-room-bar-fill" style="width:' + pct + '%"></div></div>' +
+        '<div class="room-avg">均峰 ' + (avgPeak ? avgPeak.toFixed(avgPeak >= 100 ? 0 : 1) : '0') + '</div>' +
+      '</div>';
     }).join('');
-    const totalCount = ur.length;
-    const totalAvg = totalCount ? ur.reduce((sum, r) => sum + (Number(r.peak) || 0), 0) / totalCount : 0;
     return '<div class="user-room-card">' +
-      '<div class="user-room-head">' + avatarHtml(u, 'avatar-md') + '<div class="user-room-name">' + escapeHtml(u.name) + '</div><div class="user-room-total">' + totalCount + ' 次 · 均峰 ' + totalAvg.toFixed(totalAvg >= 100 ? 0 : 1) + '</div></div>' +
+      '<div class="user-room-head">' + avatarHtml(u, 'avatar-md') + '<div class="user-room-name">' + escapeHtml(u.name) + '</div><div class="user-room-total">共主持 <b>' + totalCount + '</b> 次 · 均峰 ' + totalAvg.toFixed(totalAvg >= 100 ? 0 : 1) + '</div></div>' +
       '<div class="user-room-grid">' + roomCells + '</div>' +
     '</div>';
   }).join('');
-  return '<div class="section-head"><div><div class="section-title">按主持人统计</div><div class="section-desc">各直播间直播次数与平均' + escapeHtml(fieldName('peak', '高峰人数')) + '</div></div></div>' +
+  return '<div class="section-head"><div><div class="section-title">按主持人统计</div><div class="section-desc">各主持人主持总次数，及各直播间分别主持次数</div></div></div>' +
     '<div class="card">' + rows + '</div>';
 }
 
@@ -2092,6 +2105,9 @@ window.addEventListener('online', () => {
 
 window.addEventListener('offline', () => {
   setSyncStatus('offline', '离线使用，数据已保存在本机');
+});
+window.addEventListener('resize', () => {
+  if (app.tab === 'stats') centerRoomTrends();
 });
 
 async function registerPwa() {
