@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.4.1';
 const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const STORAGE = {
   state: 'liveStats.state.v1',
@@ -1889,7 +1889,7 @@ document.addEventListener('click', async (event) => {
       render();
       return;
     }
-    if (action === 'check-update') { checkAppUpdateAndReload(); return; }
+    if (action === 'check-update') { await checkVersion(); return; }
     if (action === 'sync-now') {
       if (app.mqttClient?.connected) {
         if (app.dirty) await publishState(); else toast('当前数据已是最新', 'success');
@@ -2057,6 +2057,27 @@ async function registerPwa() {
   }
 }
 
+
+async function checkVersion() {
+  toast('正在检查版本更新…');
+  try {
+    const res = await fetch('./version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('http ' + res.status);
+    const data = await res.json();
+    const remote = String(data.version || '');
+    const local = String(APP_VERSION || '');
+    if (remote && remote !== local && remote.localeCompare(local, undefined, { numeric: true }) > 0) {
+      toast('发现新版本 v' + remote + '，正在更新…', 'success');
+      setTimeout(() => { location.reload(); }, 1000);
+    } else if (remote) {
+      toast('已是最新版本 v' + local, 'success');
+    } else {
+      toast('已是最新版本 v' + local, 'success');
+    }
+  } catch (e) {
+    toast('检查更新失败，请稍后重试', 'error');
+  }
+}
 
 async function checkAppUpdateAndReload() {
   try {
