@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '1.5.1';
+const APP_VERSION = '1.5.2';
 const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const STORAGE = {
   state: 'liveStats.state.v1',
@@ -715,12 +715,24 @@ function render() {
 
 function afterRender() {
   bindWheels();
-  if (app.tab === 'dashboard') {
-    requestAnimationFrame(() => {
-      const chart = $('#trend-chart');
-      if (chart && app.month === monthKey()) chart.scrollLeft = chart.scrollWidth;
-    });
+  if (app.tab === 'stats') {
+    requestAnimationFrame(centerRoomTrends);
   }
+}
+
+function centerRoomTrends() {
+  $('.room-trend-scroll').forEach((sc) => {
+    const today = $('.mini-bar-col.is-today', sc);
+    let target;
+    if (today) {
+      const scRect = sc.getBoundingClientRect();
+      const tRect = today.getBoundingClientRect();
+      target = sc.scrollLeft + (tRect.left - scRect.left) - (sc.clientWidth / 2) + (tRect.width / 2);
+    } else {
+      target = sc.scrollWidth;
+    }
+    sc.scrollLeft = Math.max(0, target);
+  });
 }
 
 function renderSyncBadge() {
@@ -844,10 +856,8 @@ function renderStats() {
       kpiCard('最高' + fieldName('peak', '高峰人数'), formatNumber(summary.maxPeak), '人', '峰值', 'warning') +
       kpiCard('直播次数', formatNumber(summary.count), '次', records.length + ' 条记录', '') +
     '</div>' +
-    renderRoomChart(records) +
-    renderRoomTrends(records) +
+    renderRoomTrends() +
     renderUserRoomStats(records) +
-    renderTrendCard(records) +
     renderRecordsList(records) +
   '</section>';
 }
@@ -901,29 +911,30 @@ function renderRoomChart(records) {
     '<div class="card chart-card">' + (records.length ? '<div class="chart-scroll"><div class="chart-inner">' + bars + '</div></div>' : '<div class="chart-empty">暂无数据</div>') + '</div>';
 }
 
-function renderRoomTrends(records) {
-  if (app.range === 'today' || app.range === 'yesterday') return '';
+function renderRoomTrends() {
+  const monthRecords = recordsInMonth(app.month);
+  const days = daysInMonth(app.month);
+  const today = localDate(new Date());
+  const todayDay = today.startsWith(app.month) ? Number(today.slice(8, 10)) : 0;
   const buckets = [];
-  if (app.range === 'year') {
-    for (let m = 1; m <= 12; m++) buckets.push({ key: String(app.year) + '-' + String(m).padStart(2, '0'), label: m + '月' });
-  } else {
-    const days = daysInMonth(app.month);
-    for (let day = 1; day <= days; day++) buckets.push({ key: app.month + '-' + String(day).padStart(2, '0'), label: day + '日' });
+  for (let day = 1; day <= days; day++) {
+    buckets.push({ key: app.month + '-' + String(day).padStart(2, '0'), label: day + '日', day });
   }
   const roomCharts = app.data.rooms.map((room) => {
-    const rs = records.filter((r) => Number(r.roomId) === Number(room.id));
+    const rs = monthRecords.filter((r) => Number(r.roomId) === Number(room.id));
     const values = buckets.map((b) => {
       const list = rs.filter((r) => String(r.date || '').startsWith(b.key));
       const peakValues = list.map((r) => Number(r.peak) || 0);
       const avg = peakValues.length ? peakValues.reduce((sum, v) => sum + v, 0) / peakValues.length : 0;
-      return { label: b.label, avg, count: list.length };
+      return { label: b.label, day: b.day, avg, count: list.length };
     });
     const maxV = Math.max(1, ...values.map((v) => v.avg));
     const bars = values.map((v) => {
+      const isToday = v.day === todayDay;
       const height = v.avg > 0 ? Math.max(4, (v.avg / maxV) * 72) : 2;
       const valueText = v.avg ? String(Math.round(v.avg)) : '';
       const countText = v.count ? v.count + '次' : '';
-      return '<div class="mini-bar-col" title="' + escapeHtml(v.label) + '：平均 ' + (v.avg ? v.avg.toFixed(v.avg >= 100 ? 0 : 1) : '0') + ' 人 / ' + v.count + ' 次">' +
+      return '<div class="mini-bar-col' + (isToday ? ' is-today' : '') + '" data-day="' + v.day + '" title="' + escapeHtml(v.label) + '：平均 ' + (v.avg ? v.avg.toFixed(v.avg >= 100 ? 0 : 1) : '0') + ' 人 / ' + v.count + ' 次">' +
         '<div class="mini-bar-value">' + valueText + '</div>' +
         '<div class="mini-bar-track"><div class="mini-bar-fill" style="height:' + height + 'px"></div></div>' +
         '<div class="mini-bar-label">' + escapeHtml(v.label) + '</div>' +
@@ -932,10 +943,10 @@ function renderRoomTrends(records) {
     }).join('');
     return '<div class="room-trend">' +
       '<div class="room-trend-head"><span class="room-tag r' + Number(room.id) + '">' + escapeHtml(room.name) + '</span><span class="room-trend-count">' + rs.length + ' 次</span></div>' +
-      '<div class="chart-scroll"><div class="chart-inner">' + bars + '</div></div>' +
+      '<div class="chart-scroll room-trend-scroll" id="room-trend-scroll-' + Number(room.id) + '"><div class="chart-inner chart-inner-mini">' + bars + '</div></div>' +
     '</div>';
   }).join('');
-  return '<div class="section-head"><div><div class="section-title">各直播间' + escapeHtml(fieldName('peak', '高峰人数')) + '趋势</div><div class="section-desc">' + (app.range === 'year' ? app.year + '年按月' : monthLabel(app.month) + '按日') + '柱状趋势</div></div></div>' +
+  return '<div class="section-head"><div><div class="section-title">各直播间' + escapeHtml(fieldName('peak', '高峰人数')) + '趋势</div><div class="section-desc">' + monthLabel(app.month) + '按日柱状趋势（默认居中于今日，可左右滑动）</div></div></div>' +
     '<div class="card chart-card">' + roomCharts + '</div>';
 }
 
