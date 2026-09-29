@@ -30,6 +30,8 @@ input,textarea{outline:none}
 .hero-value{font-size:34px;font-weight:850;line-height:1;letter-spacing:-1.1px}
 .hero-unit{font-size:14px;font-weight:600;opacity:.88;margin-left:4px}
 .hero-note{font-size:12px;opacity:.82;margin-top:10px}
+.hero-right{display:flex;flex-direction:column;align-items:flex-end;gap:10px;flex:none}
+.hero-logo{width:58px;height:58px;border-radius:16px;object-fit:cover;background:#fff;box-shadow:0 8px 18px rgba(0,0,0,.22)}
 .sync-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:7px 10px;font-size:11px;font-weight:700;background:rgba(255,255,255,.17);border:1px solid rgba(255,255,255,.18);white-space:nowrap}
 .sync-dot{width:7px;height:7px;border-radius:50%;background:#9cf0d2;box-shadow:0 0 0 4px rgba(156,240,210,.14)}
 .sync-pill.offline .sync-dot{background:#ffd2a8;box-shadow:0 0 0 4px rgba(255,210,168,.14)}
