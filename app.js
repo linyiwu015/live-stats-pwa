@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '1.5.5';
+const APP_VERSION = '1.5.6';
 const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const STORAGE = {
   state: 'liveStats.state.v1',
@@ -834,6 +834,7 @@ function renderMain() {
     '<header class="topbar">' +
       '<button class="avatar-button" data-action="tab" data-tab="profile">' + avatarInner(user) + '</button>' +
       '<div style="flex:1;min-width:0"><div class="topbar-title">' + escapeHtml(title) + '</div><div class="topbar-subtitle">' + escapeHtml(subtitle) + '</div></div>' +
+      '<img class="topbar-logo" src="icons/brand-logo.png" alt="文播直播统计" />' +
       '<button class="icon-btn" data-action="sync-now" title="立即同步">↻</button>' +
     '</header>' +
     '<main class="page">' + renderTab() + '</main>' +
@@ -1356,8 +1357,7 @@ function openRecordEditor(recordId) {
 function renderHome() {
   const user = resolveUser();
   return '<section>' +
-    '<div class="hero"><div class="hero-row"><div><div class="hero-label">' + escapeHtml(dateLabel(localDate())) + ' 打卡</div><div class="hero-value">直播数据</div><div class="hero-note">' + escapeHtml(user.name) + ' · 填写完成后点击“提交打卡”</div></div>' +
-      '<div class="hero-right"><img class="hero-logo" src="icons/brand-logo.png" alt="文播直播统计" />' + renderSyncBadge() + '</div></div></div>' +
+    '<div class="hero"><div class="hero-row"><div><div class="hero-label">' + escapeHtml(dateLabel(localDate())) + ' 打卡</div><div class="hero-value">直播数据</div><div class="hero-note">' + escapeHtml(user.name) + ' · 填写完成后点击“提交打卡”</div></div>' + renderSyncBadge() + '</div></div>' +
     '<div class="card" style="margin-top:14px;padding:18px 16px">' + recordFormHtml(null, true) + '</div>' +
   '</section>';
 }
