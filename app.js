@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '1.5.8';
+const APP_VERSION = '1.5.9';
 const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const STORAGE = {
   state: 'liveStats.state.v1',
@@ -870,19 +870,32 @@ function renderBottomNav() {
 
 function renderStats() {
   const records = statsRecords(app.range);
-  const summary = recordSummary(records);
   return '<section>' +
     renderStatsHeader() +
-    '<div class="kpi-grid" style="margin-top:14px">' +
-      kpiCard(fieldName('duration', '直播时长') + '合计', (summary.totalHours ? summary.totalHours.toFixed(summary.totalHours >= 10 ? 0 : 1) : '0'), '小时', '所选范围', '') +
-      kpiCard('平均' + fieldName('peak', '高峰人数'), summary.averagePeak.toFixed(summary.averagePeak >= 100 ? 0 : 1), '人', '每条直播', 'success') +
-      kpiCard('最高' + fieldName('peak', '高峰人数'), formatNumber(summary.maxPeak), '人', '峰值', 'warning') +
-      kpiCard('直播次数', formatNumber(summary.count), '次', records.length + ' 条记录', '') +
-    '</div>' +
+    renderRoomStatsCards(records) +
     renderRoomTrends() +
     renderUserRoomStats(records) +
     renderRecordsList(records) +
   '</section>';
+}
+
+function renderRoomStatsCards(records) {
+  const rooms = viewableRooms();
+  if (!rooms.length) return '';
+  const cards = rooms.map((room) => {
+    const rs = records.filter((r) => Number(r.roomId) === Number(room.id));
+    const count = rs.length;
+    const avgPeak = count ? rs.reduce((sum, r) => sum + (Number(r.peak) || 0), 0) / count : 0;
+    return '<div class="room-stat-card">' +
+      '<div class="room-stat-name"><span class="room-tag r' + Number(room.id) + '">' + escapeHtml(room.name) + '</span></div>' +
+      '<div class="room-stat-grid">' +
+        '<div class="room-stat-item"><div class="room-stat-value">' + formatNumber(count) + '</div><div class="room-stat-label">直播次数</div></div>' +
+        '<div class="room-stat-item"><div class="room-stat-value">' + (avgPeak ? avgPeak.toFixed(avgPeak >= 100 ? 0 : 1) : '0') + '</div><div class="room-stat-label">平均观众</div></div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  return '<div class="section-head"><div><div class="section-title">各直播间统计</div><div class="section-desc">按直播间分别统计直播次数与平均观众人数</div></div></div>' +
+    '<div class="room-stat-cards">' + cards + '</div>';
 }
 
 function statsRecords(range) {
