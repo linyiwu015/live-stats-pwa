@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.6.1';
 const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const STORAGE = {
   state: 'liveStats.state.v1',
@@ -1006,11 +1006,11 @@ function renderUserRoomStats(records) {
       return '<div class="user-room-cell">' +
         '<div class="user-room-row"><span class="room-name">' + escapeHtml(room.name) + '</span><span class="room-count">' + count + ' 次</span></div>' +
         '<div class="user-room-bar"><div class="user-room-bar-fill" style="width:' + pct + '%"></div></div>' +
-        '<div class="room-avg">均峰 ' + (avgPeak ? avgPeak.toFixed(avgPeak >= 100 ? 0 : 1) : '0') + '</div>' +
+        '<div class="room-avg">平均人数 ' + (avgPeak ? avgPeak.toFixed(avgPeak >= 100 ? 0 : 1) : '0') + '</div>' +
       '</div>';
     }).join('');
     return '<div class="user-room-card">' +
-      '<div class="user-room-head">' + avatarHtml(u, 'avatar-md') + '<div class="user-room-name">' + escapeHtml(u.name) + '</div><div class="user-room-total">共主持 <b>' + totalCount + '</b> 次 · 均峰 ' + totalAvg.toFixed(totalAvg >= 100 ? 0 : 1) + '</div></div>' +
+      '<div class="user-room-head">' + avatarHtml(u, 'avatar-md') + '<div class="user-room-name">' + escapeHtml(u.name) + '</div><div class="user-room-total">共主持 <b>' + totalCount + '</b> 次 · 平均人数 ' + totalAvg.toFixed(totalAvg >= 100 ? 0 : 1) + '</div></div>' +
       '<div class="user-room-grid">' + roomCells + '</div>' +
     '</div>';
   }).join('');
