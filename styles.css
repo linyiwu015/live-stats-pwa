@@ -85,6 +85,13 @@ input,textarea{outline:none}
 .record-peak{text-align:right;flex:none}.record-peak b{display:block;font-size:18px;color:var(--primary)}.record-peak span{font-size:10px;color:var(--muted)}
 .room-tag{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;font-size:10px;font-weight:800;color:#2b8a3e;background:#e6f7eb}
 .room-tag.r2{color:#138966;background:#e9f8f3}.room-tag.r3{color:#bd6f16;background:#fff4e6}
+.room-stat-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.room-stat-card{background:var(--surface);border-radius:19px;padding:14px;box-shadow:var(--shadow-soft)}
+.room-stat-name{margin-bottom:10px}
+.room-stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.room-stat-item{background:var(--surface-2);border-radius:13px;padding:10px 6px;text-align:center}
+.room-stat-value{font-size:20px;font-weight:850;line-height:1;letter-spacing:-.5px}
+.room-stat-label{font-size:11px;color:var(--muted);margin-top:4px}
 .staff-card{display:flex;gap:12px;align-items:flex-start}
 .staff-avatar{width:46px;height:46px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(135deg,#2b8a3e,#2f9e44);color:#fff;font-size:15px;font-weight:850;flex:none}
 .staff-main{flex:1;min-width:0}.staff-name{font-size:15px;font-weight:800;display:flex;align-items:center;gap:6px}.staff-phone{font-size:12px;color:var(--muted);margin-top:3px}.staff-scope{display:flex;gap:5px;flex-wrap:wrap;margin-top:9px}.scope-tag{font-size:10px;background:var(--surface-2);color:var(--muted);padding:4px 7px;border-radius:7px;font-weight:700}.scope-tag.on{color:var(--primary);background:var(--primary-soft)}
