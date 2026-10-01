@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '1.5.9';
+const APP_VERSION = '1.6.0';
 const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const STORAGE = {
   state: 'liveStats.state.v1',
@@ -989,7 +989,7 @@ function renderRoomTrends() {
 function renderUserRoomStats(records) {
   const viewer = resolveUser();
   if (!viewer) return '';
-  const allUsers = activeUsers();
+  const allUsers = activeUsers().filter((u) => u.role !== 'admin');
   const users = (viewer.role === 'admin' || viewer.viewAll)
     ? allUsers
     : allUsers.filter((u) => u.id === viewer.id);
