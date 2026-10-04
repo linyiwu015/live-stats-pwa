@@ -1,6 +1,6 @@
 'use strict';
 
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.7.2';
 const MQTT_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const SALES_AUDIENCE_SYNC_URL = 'https://linyiwu-myapp.expo.app/api/v1/live-audience/sync';
 const STORAGE = {
@@ -795,31 +795,6 @@ async function syncSalesAudience({ manual = false } = {}) {
   }
 }
 
-function saveSalesAudienceSettings() {
-  const url = String($('#sales-sync-url')?.value || SALES_AUDIENCE_SYNC_URL).trim();
-  const key = String($('#sales-sync-key')?.value || '').trim();
-  if (!/^https:\/\//i.test(url)) {
-    toast('同步地址必须使用 https://', 'error');
-    return;
-  }
-  if (!key) {
-    toast('请填写同步密钥', 'error');
-    return;
-  }
-  app.salesAudience = {
-    ...(app.salesAudience || {}),
-    url,
-    key,
-    lastSyncAt: '',
-    lastStatus: 'idle',
-    lastMessage: '等待自动同步'
-  };
-  persistSalesAudienceState();
-  render();
-  queueSalesAudienceSync(100);
-  toast('已启用销售看板自动同步', 'success');
-}
-
 function exportData() {
   if (!app.data) return;
   const blob = new Blob([JSON.stringify(app.data, null, 2)], { type: 'application/json' });
@@ -1118,21 +1093,36 @@ function renderRoomTrends() {
   for (let day = 1; day <= days; day++) {
     buckets.push({ key: app.month + '-' + String(day).padStart(2, '0'), label: day + '日', day });
   }
-  const roomCharts = viewableRooms().map((room) => {
-    const rs = monthRecords.filter((r) => Number(r.roomId) === Number(room.id));
+  const rooms = viewableRooms();
+  const morningRoom = rooms.find((room) => /晨会|早会/.test(room.name)) || rooms[0];
+  const eveningRoom = rooms.find((room) => /晚会|晚上|晚间/.test(room.name)) || rooms[1];
+  const replacedRoom = rooms.find((room) => /减肥|减脂/.test(room.name)) || rooms[2];
+  const roomCharts = rooms.map((room) => {
+    const isTotal = replacedRoom && Number(room.id) === Number(replacedRoom.id);
+    const sourceIds = new Set(
+      (isTotal ? [morningRoom, eveningRoom] : [room])
+        .filter(Boolean)
+        .map((item) => Number(item.id))
+    );
+    const rs = monthRecords.filter((r) => sourceIds.has(Number(r.roomId)));
     const values = buckets.map((b) => {
       const list = rs.filter((r) => String(r.date || '').startsWith(b.key));
       const peakValues = list.map((r) => Number(r.peak) || 0);
-      const avg = peakValues.length ? peakValues.reduce((sum, value) => sum + value, 0) / peakValues.length : 0;
-      return { label: b.label, day: b.day, avg, count: list.length };
+      const total = peakValues.reduce((sum, value) => sum + value, 0);
+      const avg = peakValues.length ? total / peakValues.length : 0;
+      return { label: b.label, day: b.day, avg, total, count: list.length };
     });
-    const maxV = Math.max(1, ...values.map((v) => v.avg));
+    const maxV = Math.max(1, ...values.map((v) => isTotal ? v.total : v.avg));
     const bars = values.map((v) => {
       const isToday = v.day === todayDay;
-      const height = v.avg > 0 ? Math.max(4, (v.avg / maxV) * 72) : 2;
-      const valueText = v.avg ? String(Math.round(v.avg)) : '';
+      const value = isTotal ? v.total : v.avg;
+      const height = value > 0 ? Math.max(4, (value / maxV) * 72) : 2;
+      const valueText = value ? String(Math.round(value)) : '';
       const countText = v.count ? v.count + '次' : '';
-      return '<div class="mini-bar-col' + (isToday ? ' is-today' : '') + '" data-day="' + v.day + '" title="' + escapeHtml(v.label) + '：平均 ' + (v.avg ? v.avg.toFixed(v.avg >= 100 ? 0 : 1) : '0') + ' 人 / ' + v.count + ' 次">' +
+      const valueLabel = isTotal
+        ? '合计 ' + formatNumber(v.total) + ' 人'
+        : '平均 ' + (v.avg ? v.avg.toFixed(v.avg >= 100 ? 0 : 1) : '0') + ' 人';
+      return '<div class="mini-bar-col' + (isToday ? ' is-today' : '') + '" data-day="' + v.day + '" title="' + escapeHtml(v.label) + '：' + valueLabel + ' / ' + v.count + ' 次">' +
         '<div class="mini-bar-value">' + valueText + '</div>' +
         '<div class="mini-bar-track"><div class="mini-bar-fill" style="height:' + height + 'px"></div></div>' +
         '<div class="mini-bar-label">' + escapeHtml(v.label) + '</div>' +
@@ -1140,11 +1130,11 @@ function renderRoomTrends() {
       '</div>';
     }).join('');
     return '<div class="room-trend">' +
-      '<div class="room-trend-head"><span class="room-tag r' + Number(room.id) + '">' + escapeHtml(room.name) + '</span><span class="room-trend-count">' + rs.length + ' 次</span></div>' +
+      '<div class="room-trend-head"><span class="' + (isTotal ? 'room-tag total' : 'room-tag r' + Number(room.id)) + '">' + escapeHtml(isTotal ? '合计人数' : room.name) + '</span><span class="room-trend-count">' + rs.length + ' 次</span></div>' +
       '<div class="chart-scroll room-trend-scroll" id="room-trend-scroll-' + Number(room.id) + '"><div class="chart-inner chart-inner-mini"><div class="chart-spacer chart-spacer-lead"></div>' + bars + '<div class="chart-spacer chart-spacer-trail"></div></div></div>' +
     '</div>';
   }).join('');
-  return '<div class="section-head"><div><div class="section-title">各直播间' + escapeHtml(fieldName('peak', '高峰人数')) + '趋势</div><div class="section-desc">' + monthLabel(app.month) + '按日柱状趋势（默认居中于今日，可左右滑动）</div></div></div>' +
+  return '<div class="section-head"><div><div class="section-title">各直播间观众人数趋势</div><div class="section-desc">' + monthLabel(app.month) + '按日柱状趋势；第三个“合计人数”=晨会+晚会（默认居中于今日，可左右滑动）</div></div></div>' +
     '<div class="card chart-card">' + roomCharts + '</div>';
 }
 
@@ -1327,16 +1317,6 @@ function renderProfile() {
       (user.role === 'admin' ? '<button class="btn btn-ghost btn-block" style="margin-top:10px" data-action="invite">邀请二维码</button>' : '') +
       '<button class="btn btn-danger btn-block" style="margin-top:10px" data-action="logout">退出登录</button>' +
     '</div>' +
-    (user.role === 'admin' ? (
-      '<div class="section-head"><div class="section-title">销售看板自动同步</div></div>' +
-      '<div class="card card-tight">' +
-        '<div class="form-group"><label class="form-label">同步地址</label><input id="sales-sync-url" class="input" type="url" value="' + escapeHtml(salesAudienceConfig().url) + '" /></div>' +
-        '<div class="form-group"><label class="form-label">同步密钥</label><input id="sales-sync-key" class="input" type="password" value="' + escapeHtml(salesAudienceConfig().key) + '" placeholder="填写销售看板生成的同步密钥" /></div>' +
-        '<div class="stat-row"><span class="stat-row-label">同步状态</span><span id="sales-sync-status" class="stat-row-value">' + escapeHtml(salesAudienceStatusText()) + '</span></div>' +
-        '<div class="btn-row"><button class="btn btn-primary" data-action="save-sales-sync">保存并同步</button><button class="btn btn-soft" data-action="sync-sales-now">立即同步</button></div>' +
-        '<p class="form-hint">保存后，新增、修改、删除直播记录都会自动把“在线高峰人数”同步到销售看板。</p>' +
-      '</div>'
-    ) : '') +
     '<p class="safe-note">文播直播统计 v' + APP_VERSION + '<br>数据经加密后保存，请妥善保管团队码。</p>' +
   '</section>';
 }
@@ -2267,8 +2247,6 @@ document.addEventListener('click', async (event) => {
     if (action === 'install') { await installApp(); return; }
     if (action === 'export-data') { exportData(); return; }
     if (action === 'import-data') { $('#import-file')?.click(); return; }
-    if (action === 'save-sales-sync') { saveSalesAudienceSettings(); return; }
-    if (action === 'sync-sales-now') { await syncSalesAudience({ manual: true }); return; }
     if (action === 'logout') { logout(); return; }
   } catch (error) {
     console.error('操作失败', action, error);
@@ -2373,6 +2351,7 @@ async function boot() {
   const hash = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
   const hashParams = new URLSearchParams(hash);
   const joinCode = hashParams.get('join');
+  const salesSync = hashParams.get('salesSync');
   if (joinCode) {
     const normalized = joinCode.trim().toUpperCase();
     if (app.teamCode !== normalized) {
@@ -2385,6 +2364,18 @@ async function boot() {
       localStorage.removeItem(STORAGE.session);
       writeJson(STORAGE.dirty, false);
     }
+  }
+  if (salesSync) {
+    app.salesAudience = {
+      ...(app.salesAudience || {}),
+      url: SALES_AUDIENCE_SYNC_URL,
+      key: salesSync.trim(),
+      lastStatus: 'idle',
+      lastMessage: '等待自动同步'
+    };
+    persistSalesAudienceState();
+  }
+  if (joinCode || salesSync) {
     history.replaceState(null, '', location.pathname + (location.search || ''));
   }
   app.initialized = true;

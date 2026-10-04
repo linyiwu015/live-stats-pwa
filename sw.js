@@ -1,4 +1,4 @@
-const VERSION = 'live-stats-v1.7.0';
+const VERSION = 'live-stats-v1.7.2';
 const ASSETS = [
   './',
   './index.html',
