@@ -92,6 +92,8 @@ input,textarea{outline:none}
 .room-stat-item{background:var(--surface-2);border-radius:13px;padding:10px 6px;text-align:center}
 .room-stat-value{font-size:20px;font-weight:850;line-height:1;letter-spacing:-.5px}
 .room-stat-label{font-size:11px;color:var(--muted);margin-top:4px}
+.room-stat-card.total{background:linear-gradient(145deg,#e8faf0,#ffffff);border:1px solid #b7e4c7}
+.room-tag.total{background:linear-gradient(135deg,var(--primary),#37b24d);color:#fff}
 .staff-card{display:flex;gap:12px;align-items:flex-start}
 .staff-avatar{width:46px;height:46px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(135deg,#2b8a3e,#2f9e44);color:#fff;font-size:15px;font-weight:850;flex:none}
 .staff-main{flex:1;min-width:0}.staff-name{font-size:15px;font-weight:800;display:flex;align-items:center;gap:6px}.staff-phone{font-size:12px;color:var(--muted);margin-top:3px}.staff-scope{display:flex;gap:5px;flex-wrap:wrap;margin-top:9px}.scope-tag{font-size:10px;background:var(--surface-2);color:var(--muted);padding:4px 7px;border-radius:7px;font-weight:700}.scope-tag.on{color:var(--primary);background:var(--primary-soft)}
